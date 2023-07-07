@@ -8,7 +8,7 @@ import cv2 as cv
 ################################################################################
 # UTILITY FUNCs
 ################################################################################
-def parse_xml(path: str) -> Tuple[str, list, int]:
+def parse_xml(path: str) -> Tuple[str, list[int], int]:
 	"""
 	Get the datastrip id, band offset, and band quantification value from the xml metadata file 
 	found in path.
@@ -22,10 +22,8 @@ def parse_xml(path: str) -> Tuple[str, list, int]:
 	-------
 	datastrip_id: str
 		Extracted datastrip id
-
 	offset_value: list
 		Bottom-of-atmosphere offsets to shift all values in the corresponding bands in a raster.
-
 	quant_value: int
 		Product quantification value, meaning the correct divisor for all bands to normalize them.
 	"""
@@ -39,10 +37,12 @@ def parse_xml(path: str) -> Tuple[str, list, int]:
 	gral_info    = root.find('n1:General_Info',MTD_NS)
 	product_info = gral_info.find('Product_Info')
 	product_char = gral_info.find('Product_Image_Characteristics')
-	#INSIDE TAG <Product_Info> -- ALWAYS in XML
+	#INSIDE TAG <Product_Info> -- ALWAYS in file
 	granule_attrib = list(product_info.iter('Granule'))[0].attrib
 	datastrip      = granule_attrib['datastripIdentifier']
 	granule        = granule_attrib['granuleIdentifier']
+
+	pass
 
 	return datastrip
 
@@ -50,26 +50,23 @@ def parse_xml(path: str) -> Tuple[str, list, int]:
 ################################################################################
 # BAND ARITHMETIC
 ################################################################################
-def clip_tail(img: numpy.ndarray, bottom: int=1,top: int=99) -> numpy.ndarray:
-	'''
+def clip_tail(img: numpy.ndarray, bottom: int=1, top: int=99) -> numpy.ndarray:
+	"""
 	Removes the data in img whose values are below the 'bottom' percent and above 'top' percent.
 
 	Parameters
 	----------
 	img: numpy.ndarray	
 		The raster image.
-
 	bottom: int
 		Bottom amount to be removed
-
 	top: int
-
 
 	Returns
 	-------
 	result: numpy.ndarray
+	"""
 
-	'''
 	#input check
 	try:
 		assert bottom < 100 and bottom >= 0, "Int 'bottom' must be between 0 and 99 inclusive."
@@ -80,7 +77,7 @@ def clip_tail(img: numpy.ndarray, bottom: int=1,top: int=99) -> numpy.ndarray:
 		raise AssertionError from e
 
 
-def unit_normalize(b: numpy.ndarray) -> numpy.ndarray:
+def unit_normalize(img: numpy.ndarray, by_band: bool=False) -> numpy.ndarray:
 	"""
 	Unit-normalize a set of bands individually or across all bands.
 	
@@ -92,7 +89,15 @@ def unit_normalize(b: numpy.ndarray) -> numpy.ndarray:
 	-------
 
 	"""
-	return (b - b.min())/(b.max()-b.min())
+
+	if by_band is False:
+		return (img - img.min()) / (img.max() - img.min())
+
+	else:
+		n_bs = img.shape[0] #assuming bands is outermost axis
+		mins = np.array( [band.min() for band in img] ).reshape((n_bs,1,1))
+		maxs = np.array( [band.max() for band in img] ).reshape((n_bs,1,1))
+		return (img - mins) / (maxs - mins) #CHECK-------------------------------> division by zero?
 
 
 ################################################################################
@@ -122,15 +127,18 @@ def plot_img(filename,img,lib='opencv'):
 	if lib == 'opencv':
 		#order is BGR, [M,N,Chans]
 		cv.imwrite(filename,img)
+
 	elif lib == 'pil':
 		if len(img.shape) == 2:
 			img_8bit = np.uint8(unit_norm(img)*255) #floor
 			Image.fromarray(img_8bit).save(filename)
+
 	elif lib == 'pyplot':
 		if len(img.shape) == 2:
 			plt.imsave(filename,img,cmap=Greys)
 		if len(img.shape) == 3:
 			plt.imsave(filename,img[:,:,::-1]) #flip BGR to RGB
+
 	else:
 		print("Please specify a library for plot_img().")
 
@@ -148,41 +156,43 @@ def plot_multi_hist():
 ####################################################################################################
 
 if __name__ == '__main__':
-	#OPEN IMAGE POINTER
-	new_b02 = rio.open(NEW_B02_PATH)
-	new_b03 = rio.open(NEW_B03_PATH)
-	new_b04 = rio.open(NEW_B04_PATH)
-	new_b8a = rio.open(NEW_B8A_PATH)
-	new_tci = rio.open(NEW_TCI_PATH)
 
-	#LOAD IMAGE
-	b02 = new_b02.read()
-	b03 = new_b03.read()
-	b04 = new_b04.read()
-	b8a = new_b8a.read()
-	tci = new_tci.read()
+	pass
 
-	b02 = b02.squeeze(axis=0)
-	b03 = b03.squeeze(axis=0)
-	b04 = b04.squeeze(axis=0)
-	b8a = b8a.squeeze(axis=0)
-	#UNIT NORM AND STRETCH TO BPP
-	bpp = 16
-	L   = 2**bpp
-	b02,b03,b04,b8a = [np.uint16(unit_norm(i)*(L-1)) for i in [b02,b03,b04,b8a]]
+	# #OPEN IMAGE POINTER
+	# new_b02 = rio.open(NEW_B02_PATH)
+	# new_b03 = rio.open(NEW_B03_PATH)
+	# new_b04 = rio.open(NEW_B04_PATH)
+	# new_b8a = rio.open(NEW_B8A_PATH)
+	# new_tci = rio.open(NEW_TCI_PATH)
 
-	#EQUALIZE
-	b02,b03,b04 = [hist_eq(_) for _ in (b02,b03,b04)]
+	# #LOAD IMAGE
+	# b02 = new_b02.read()
+	# b03 = new_b03.read()
+	# b04 = new_b04.read()
+	# b8a = new_b8a.read()
+	# tci = new_tci.read()
 
-	bgr = np.moveaxis(np.stack((b02,b03,b04)),0,-1)
-	cv.imwrite('bgr_eq.png',bgr)
+	# b02 = b02.squeeze(axis=0)
+	# b03 = b03.squeeze(axis=0)
+	# b04 = b04.squeeze(axis=0)
+	# b8a = b8a.squeeze(axis=0)
+	# #UNIT NORM AND STRETCH TO BPP
+	# bpp = 16
+	# L   = 2**bpp
+	# b02,b03,b04,b8a = [np.uint16(unit_norm(i)*(L-1)) for i in [b02,b03,b04,b8a]]
 
-	#STRETCH
+	# #EQUALIZE
+	# b02,b03,b04 = [hist_eq(_) for _ in (b02,b03,b04)]
 
-	b02_stretched = np.uint16( unit_norm(b03) * (L-1) )
-	b03_stretched = np.uint16( unit_norm(b03) * (L-1) )
-	b04_stretched = np.uint16( unit_norm(b04) * (L-1) )
-	b8a_stretched = np.uint16( unit_norm(b8a) * (L-1) )
+	# bgr = np.moveaxis(np.stack((b02,b03,b04)),0,-1)
+	# cv.imwrite('bgr_eq.png',bgr)
+
+	# # STRETCH
+	# b02_stretched = np.uint16( unit_norm(b03) * (L-1) )
+	# b03_stretched = np.uint16( unit_norm(b03) * (L-1) )
+	# b04_stretched = np.uint16( unit_norm(b04) * (L-1) )
+	# b8a_stretched = np.uint16( unit_norm(b8a) * (L-1) )
 
 	# bins = 2**bpp
 	# fig, axs = plt.subplots(1,4,sharey=True,tight_layout=True)
@@ -193,20 +203,20 @@ if __name__ == '__main__':
 	# plt.title('Histogram of Bands - Raw Images, Stretch, bins=%i' % bins)
 	# plt.savefig('./figures/band_hist_0.png')
 
-	#RIGHT SHIFT
-	b02_shifted = np.right_shift(b02_stretched,4) #to 12-bits
-	b03_shifted = np.right_shift(b03_stretched,4)
-	b04_shifted = np.right_shift(b04_stretched,4)
-	b8a_shifted = np.right_shift(b8a_stretched,4)
+	# # RIGHT SHIFT
+	# b02_shifted = np.right_shift(b02_stretched,4) #to 12-bits
+	# b03_shifted = np.right_shift(b03_stretched,4)
+	# b04_shifted = np.right_shift(b04_stretched,4)
+	# b8a_shifted = np.right_shift(b8a_stretched,4)
 
-	bins = 2**12
-	fig, axs = plt.subplots(1,4,sharey=True,tight_layout=True,figsize=(20,5))
-	axs[0].hist(b04_shifted.flatten(),color='r',bins=bins)
-	axs[1].hist(b03_shifted.flatten(),color='g',bins=bins)
-	axs[2].hist(b02_shifted.flatten(),color='b',bins=bins)
-	axs[3].hist(b8a_shifted.flatten(),color='r',bins=bins)
-	plt.title('Histogram of Bands - Raw Image, R Shift ,bins=%i' % bins)
-	plt.savefig('./fig/band_hist_1.png')
+	# bins = 2**12
+	# fig, axs = plt.subplots(1,4,sharey=True,tight_layout=True,figsize=(20,5))
+	# axs[0].hist(b04_shifted.flatten(),color='r',bins=bins)
+	# axs[1].hist(b03_shifted.flatten(),color='g',bins=bins)
+	# axs[2].hist(b02_shifted.flatten(),color='b',bins=bins)
+	# axs[3].hist(b8a_shifted.flatten(),color='r',bins=bins)
+	# plt.title('Histogram of Bands - Raw Image, R Shift ,bins=%i' % bins)
+	# plt.savefig('./fig/band_hist_1.png')
 
 
 	#NIR->R, R->G, G->B -- colour ir
