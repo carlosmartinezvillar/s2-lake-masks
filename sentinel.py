@@ -5,10 +5,17 @@ import pandas as pd
 import numpy as np
 import cv2 as cv
 
+plt.style.use('fast')
+################################################################################
+# TYPING
+################################################################################
+from typing import Tuple, List
+ndarray = np.ndarray #quickest patch...
+
 ################################################################################
 # UTILITY FUNCs
 ################################################################################
-def parse_xml(path: str) -> Tuple[str, list[int], int]:
+def parse_xml(path: str) -> Tuple[str, List[int], int]:
 	"""
 	Get the datastrip id, band offset, and band quantification value from the xml metadata file 
 	found in path.
@@ -16,13 +23,13 @@ def parse_xml(path: str) -> Tuple[str, list[int], int]:
 	Parameters
 	----------
 	path : str
-		The path to the xml file.
+		The string path to the xml file.
 
 	Returns
 	-------
 	datastrip_id: str
-		Extracted datastrip id
-	offset_value: list
+		The extracted datastrip id
+	offset_value: list[int]
 		Bottom-of-atmosphere offsets to shift all values in the corresponding bands in a raster.
 	quant_value: int
 		Product quantification value, meaning the correct divisor for all bands to normalize them.
@@ -46,11 +53,27 @@ def parse_xml(path: str) -> Tuple[str, list[int], int]:
 
 	return datastrip
 
+def chip_image(img: ndarray, chp_size: int=512) -> List[ndarray]:
+	"""
+	Parameters
+	----------
+	img: ndarray
+		Input raster image.
+	chp_size:
+		The size of the chips. The resulting images will be of size chp_size x chp_size.
+
+	Returns
+	-------
+	result: List[ndarray]
+		A list containing the resulting images.
+	"""
+	pass
+
 
 ################################################################################
 # BAND ARITHMETIC
 ################################################################################
-def clip_tail(img: numpy.ndarray, bottom: int=1, top: int=99) -> numpy.ndarray:
+def clip_tail(img: ndarray, bottom: int=1, top: int=99) -> ndarray:
 	"""
 	Removes the data in img whose values are below the 'bottom' percent and above 'top' percent.
 
@@ -77,16 +100,23 @@ def clip_tail(img: numpy.ndarray, bottom: int=1, top: int=99) -> numpy.ndarray:
 		raise AssertionError from e
 
 
-def unit_normalize(img: numpy.ndarray, by_band: bool=False) -> numpy.ndarray:
+def unit_normalize(img: ndarray, by_band: bool=False) -> ndarray:
 	"""
 	Unit-normalize a set of bands individually or across all bands.
 	
 	Parameters
 	----------
-	
+	img: numpy.ndarray
+		A 1-band or 3-band raster image with the first axis being the bands.
+	by_band: bool
+		Boolean flag for the type of normalization. If false a single pair of min and max values is 
+		used to normalize all bands. If true, min and max values in each band are used to normalize 
+		that corresponding band.
 
 	Returns
 	-------
+	result: numpy.ndarray
+		The normalized image
 
 	"""
 
@@ -97,41 +127,40 @@ def unit_normalize(img: numpy.ndarray, by_band: bool=False) -> numpy.ndarray:
 		n_bs = img.shape[0] #assuming bands is outermost axis
 		mins = np.array( [band.min() for band in img] ).reshape((n_bs,1,1))
 		maxs = np.array( [band.max() for band in img] ).reshape((n_bs,1,1))
-		return (img - mins) / (maxs - mins) #CHECK-------------------------------> division by zero?
+		return (img - mins) / (maxs - mins)
 
+
+def calculate_ndwi(b3: ndarray, b8: ndarray) -> ndarray:
+	"""
+	Parameters
+	----------
+	b3 : ndarray
+		Green band.
+
+	b8: ndarray
+		NIR band.
+
+	Returns
+	-------
+	result: ndarray
+		A single band ndarray with the calculated NDWI with values in the range (-1,1)
+	"""
+	#NIR->R, R->G, G->B -- colour ir
+	#(B3-B8)/(B3+B8) -- NDWI
+	result = (b3-b8) / (b3+b8)
+	return result
 
 ################################################################################
 # PLOTTING, HISTOGRAMS, ET CETERA
 ################################################################################
-def hist_eq(img,bpp):
-	L = 2**bpp
-	M = img.shape[0]
-	N = img.shape[1]
-	u,i,c = np.unique(img,return_inverse=True,return_counts=True)
-	print(u.shape,i.shape,c.shape)
-	cdf   = np.cumsum(c)
-
-	#Method 1
-	new_img = cdf[i].reshape((M,N))
-	new_img = np.uint16((new_img-cdf.min())/(M*N-1) * (L-1))
-	
-	#Method 2
-	# p = cdf/(M*N)
-	# new_img = p[i] * (L-1)
-	
-	#Return array of size MxN with equalized image
-	return new_img
-
-
-def plot_img(filename,img,lib='opencv'):
+def plot_img(path: str, img: ndarray, lib: str='opencv') -> None:
 	if lib == 'opencv':
 		#order is BGR, [M,N,Chans]
 		cv.imwrite(filename,img)
 
 	elif lib == 'pil':
 		if len(img.shape) == 2:
-			img_8bit = np.uint8(unit_norm(img)*255) #floor
-			Image.fromarray(img_8bit).save(filename)
+			Image.fromarray(np.uint8(unit_normalize(img)*255)).save(filename)
 
 	elif lib == 'pyplot':
 		if len(img.shape) == 2:
@@ -143,13 +172,22 @@ def plot_img(filename,img,lib='opencv'):
 		print("Please specify a library for plot_img().")
 
 
-def plot_single_hist(band):
-	fig,axs = p
+def plot_single_hist(path: str, band: ndarray, title: str, n_bins: int) -> None:
+	fig,ax = plt.subplots()
+	ax.set_title(title)
+	ax.hist(band.flatten(),bins=n_bins)
 	pass
+	plt.savefig(path)
 
 
-def plot_multi_hist():
-	pass
+def plot_multip_hist(path: str, img: ndarray, title: str, subtitle: List[str], n_bins: int) -> None:
+	fig, axs = plt.subplots(nrows=1,ncols=bands.shape[0],sharey=True,tight_layout=True)
+	fig.suptitle(title)
+	colors = ['r','g','b','darkred']
+	for i in range(img.shape[0]):
+		axs[i].hist(img[i].flatten(),bins=n_bins)
+		axs[i].set_title(subtitle[i])
+	plt.savefig(path)
 
 ####################################################################################################
 # MAIN
@@ -177,61 +215,10 @@ if __name__ == '__main__':
 	# b03 = b03.squeeze(axis=0)
 	# b04 = b04.squeeze(axis=0)
 	# b8a = b8a.squeeze(axis=0)
-	# #UNIT NORM AND STRETCH TO BPP
-	# bpp = 16
-	# L   = 2**bpp
-	# b02,b03,b04,b8a = [np.uint16(unit_norm(i)*(L-1)) for i in [b02,b03,b04,b8a]]
-
-	# #EQUALIZE
-	# b02,b03,b04 = [hist_eq(_) for _ in (b02,b03,b04)]
 
 	# bgr = np.moveaxis(np.stack((b02,b03,b04)),0,-1)
 	# cv.imwrite('bgr_eq.png',bgr)
-
-	# # STRETCH
-	# b02_stretched = np.uint16( unit_norm(b03) * (L-1) )
-	# b03_stretched = np.uint16( unit_norm(b03) * (L-1) )
-	# b04_stretched = np.uint16( unit_norm(b04) * (L-1) )
-	# b8a_stretched = np.uint16( unit_norm(b8a) * (L-1) )
-
-	# bins = 2**bpp
-	# fig, axs = plt.subplots(1,4,sharey=True,tight_layout=True)
-	# axs[0].hist(b04_stretched.flatten(),color='r',bins=bins)
-	# axs[1].hist(b03_stretched.flatten(),color='g',bins=bins)
-	# axs[2].hist(b02_stretched.flatten(),color='b',bins=bins)
-	# axs[3].hist(b8a_stretched.flatten(),color='r',bins=bins)
-	# plt.title('Histogram of Bands - Raw Images, Stretch, bins=%i' % bins)
-	# plt.savefig('./figures/band_hist_0.png')
-
-	# # RIGHT SHIFT
-	# b02_shifted = np.right_shift(b02_stretched,4) #to 12-bits
-	# b03_shifted = np.right_shift(b03_stretched,4)
-	# b04_shifted = np.right_shift(b04_stretched,4)
-	# b8a_shifted = np.right_shift(b8a_stretched,4)
-
-	# bins = 2**12
-	# fig, axs = plt.subplots(1,4,sharey=True,tight_layout=True,figsize=(20,5))
-	# axs[0].hist(b04_shifted.flatten(),color='r',bins=bins)
-	# axs[1].hist(b03_shifted.flatten(),color='g',bins=bins)
-	# axs[2].hist(b02_shifted.flatten(),color='b',bins=bins)
-	# axs[3].hist(b8a_shifted.flatten(),color='r',bins=bins)
-	# plt.title('Histogram of Bands - Raw Image, R Shift ,bins=%i' % bins)
-	# plt.savefig('./fig/band_hist_1.png')
-
-
+	# # RIGHT SHIFT -- np.right_shift() bitwise
 	#NIR->R, R->G, G->B -- colour ir
 	#(B3-B8)/(B3+B8) -- NDWI
-	# ndwi = (b03_shifted - b8a_shifted)/(b03_shifted + b8a_shifted)
-	# plt.figure()
-	# plt.imshow(ndwi[0],cmap='RdBu')
-	# plt.title("NDWI")
-	# plt.savefig("./figures/ndwi.png")
-
-
-
-	#RGB COMPOSITE
-	# rgb  = np.concatenate([b04_shifted,b03_shifted,b02_shifted],axis=0)
-	# plt.figure()
-	# plt.imshow(rgb)
-	# plt.title("RGB from Bands")
-	# plt.savefig("./figures/rgb.png")
+	#RGB COMPOSITE -- np.concatenate([b04_shifted,b03_shifted,b02_shifted],axis=0
