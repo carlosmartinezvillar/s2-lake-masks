@@ -4,21 +4,28 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 import cv2 as cv
+import os
+# import glob
 
-plt.style.use('fast')
 ################################################################################
 # TYPING
 ################################################################################
 from typing import Tuple, List
-ndarray = np.ndarray #quickest patch...
+ndarray = np.ndarray #quick fix...
 
 ################################################################################
-# UTILITY FUNCs
+# GLOBAL VARIABLES
+################################################################################
+plt.style.use('fast')
+DATA_DIR = './dat/'
+
+################################################################################
+# FUNCTIONs
 ################################################################################
 def parse_xml(path: str) -> Tuple[str, List[int], int]:
 	"""
-	Get the datastrip id, band offset, and band quantification value from the xml metadata file 
-	found in path.
+	Get the datastrip id, band offset, and band quantification value from the 
+	xml metadata file found in path.
 
 	Parameters
 	----------
@@ -30,9 +37,11 @@ def parse_xml(path: str) -> Tuple[str, List[int], int]:
 	datastrip_id: str
 		The extracted datastrip id
 	offset_value: list[int]
-		Bottom-of-atmosphere offsets to shift all values in the corresponding bands in a raster.
+		Bottom-of-atmosphere offsets to shift all values in the corresponding 
+		bands in a raster.
 	quant_value: int
-		Product quantification value, meaning the correct divisor for all bands to normalize them.
+		Product quantification value, meaning the correct divisor for all bands 
+		to normalize them.
 	"""
 	path = DATA_DIR + row[1] + '/MTD.xml'
 	print("--> Parsing %s..." % path)
@@ -53,20 +62,26 @@ def parse_xml(path: str) -> Tuple[str, List[int], int]:
 
 	return datastrip
 
-def chip_image(img: ndarray, chp_size: int=512) -> List[ndarray]:
+def chip_image(img: ndarray, chp_size: int=512) -> ndarray:
 	"""
 	Parameters
 	----------
-	img: ndarray
+	img: numpy.ndarray
 		Input raster image.
-	chp_size:
-		The size of the chips. The resulting images will be of size chp_size x chp_size.
+	chp_size: int
+		The size of the chips. The resulting images will be of size chp_size x 
+		chp_size.
 
 	Returns
 	-------
-	result: List[ndarray]
-		A list containing the resulting images.
+	result: numpy.ndarray
+		An array with dimensions (N,chp_size,chp_size) containing the resulting 
+		images, where N is the number of resulting chips from the image.
 	"""
+	pass
+
+
+def chip_image_gpu(img: ndarray, chp_size: int=512) -> ndarray:
 	pass
 
 
@@ -75,7 +90,7 @@ def chip_image(img: ndarray, chp_size: int=512) -> List[ndarray]:
 ################################################################################
 def clip_tail(img: ndarray, bottom: int=1, top: int=99) -> ndarray:
 	"""
-	Removes the data in img whose values are below the 'bottom' percent and above 'top' percent.
+	Remove the values below the 'bottom' and  above 'top' percent in an image.
 
 	Parameters
 	----------
@@ -92,9 +107,12 @@ def clip_tail(img: ndarray, bottom: int=1, top: int=99) -> ndarray:
 
 	#input check
 	try:
-		assert bottom < 100 and bottom >= 0, "Int 'bottom' must be between 0 and 99 inclusive."
-		assert top <= 100 and top > 0, "Int 'top' must be between 1 and 100 inclusive."
-		assert top > bottom, "Upper boundary 'top' must be greater than 'bottom'."
+		assert bottom < 100 and bottom >= 0, \
+			"'bottom' must be between 0 and 99 inclusive."
+		assert top <= 100 and top > 0, \
+			"Int 'top' must be between 1 and 100 inclusive."
+		assert top > bottom, \
+			"Upper boundary 'top' must be greater than 'bottom'."
 	except AssertionError as e:
 		print("In clip_tail():")
 		raise AssertionError from e
@@ -109,9 +127,10 @@ def unit_normalize(img: ndarray, by_band: bool=False) -> ndarray:
 	img: numpy.ndarray
 		A 1-band or 3-band raster image with the first axis being the bands.
 	by_band: bool
-		Boolean flag for the type of normalization. If false a single pair of min and max values is 
-		used to normalize all bands. If true, min and max values in each band are used to normalize 
-		that corresponding band.
+		Boolean flag for the type of normalization. If false a single pair of 
+		min and max values for all bands is used to normalize all bands. If 
+		true, the min and max values in each band are used to normalize the 
+		corresponding bands.
 
 	Returns
 	-------
@@ -195,7 +214,9 @@ def plot_multip_hist(path: str, img: ndarray, title: str, subtitle: List[str], n
 
 if __name__ == '__main__':
 
-	pass
+	folders = [d for d in os.listdir('./dat/') if d[-5:]=='.SAFE']
+	files   = os.listdir('./dat/' + folders[0])
+	xml_file = None
 
 	# #OPEN IMAGE POINTER
 	# new_b02 = rio.open(NEW_B02_PATH)
