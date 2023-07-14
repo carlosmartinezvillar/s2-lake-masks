@@ -62,6 +62,7 @@ def parse_xml(path: str) -> Tuple[str, List[int], int]:
 
 	return datastrip
 
+
 def chip_image(img: ndarray, chp_size: int=512) -> ndarray:
 	"""
 	Parameters
@@ -169,23 +170,24 @@ def calculate_ndwi(b3: ndarray, b8: ndarray) -> ndarray:
 	result = (b3-b8) / (b3+b8)
 	return result
 
+
 ################################################################################
 # PLOTTING, HISTOGRAMS, ET CETERA
 ################################################################################
 def plot_img(path: str, img: ndarray, lib: str='opencv') -> None:
 	if lib == 'opencv':
 		#order is BGR, [M,N,Chans]
-		cv.imwrite(filename,img)
+		cv.imwrite(path,img)
 
 	elif lib == 'pil':
 		if len(img.shape) == 2:
-			Image.fromarray(np.uint8(unit_normalize(img)*255)).save(filename)
+			Image.fromarray(np.uint8(unit_normalize(img)*255)).save(path)
 
 	elif lib == 'pyplot':
 		if len(img.shape) == 2:
-			plt.imsave(filename,img,cmap=Greys)
+			plt.imsave(path,img,cmap=Greys)
 		if len(img.shape) == 3:
-			plt.imsave(filename,img[:,:,::-1]) #flip BGR to RGB
+			plt.imsave(path,img[:,:,::-1]) #flip BGR to RGB
 
 	else:
 		print("Please specify a library for plot_img().")
@@ -208,6 +210,7 @@ def plot_multip_hist(path: str, img: ndarray, title: str, subtitle: List[str], n
 		axs[i].set_title(subtitle[i])
 	plt.savefig(path)
 
+
 ####################################################################################################
 # MAIN
 ####################################################################################################
@@ -217,6 +220,7 @@ if __name__ == '__main__':
 	folders = [d for d in os.listdir('./dat/') if d[-5:]=='.SAFE']
 	files   = os.listdir('./dat/' + folders[0])
 	xml_file = None
+	pass
 
 	# #OPEN IMAGE POINTER
 	# new_b02 = rio.open(NEW_B02_PATH)
