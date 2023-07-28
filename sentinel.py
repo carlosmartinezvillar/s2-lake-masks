@@ -17,7 +17,8 @@ ndarray = np.ndarray #quick fix...
 # GLOBAL VARIABLES
 ################################################################################
 plt.style.use('fast')
-DATA_DIR = './dat/'
+DATA_DIR  = './dat/'
+TILE_SIZE = 512
 
 ################################################################################
 # FUNCTIONs
@@ -84,6 +85,15 @@ def chip_image(img: ndarray, chp_size: int=512) -> ndarray:
 
 def chip_image_gpu(img: ndarray, chp_size: int=512) -> ndarray:
 	pass
+
+
+def upsample_mask(mask: ndarray) -> ndarray:
+	"""
+	Duplicate the size of the array containing the Sentinel-2 SCL 20m masks.
+	"""
+	# t_mask = torch.tensor(mask) ----> type error here
+	# return torch.nn.functional.upsample(t_mask,scale_factor=2,mode='nearest')
+	return np.repeat(np.repeat(mask,2,axis=0),2,axis=1)
 
 
 ################################################################################
@@ -211,39 +221,36 @@ def plot_multip_hist(path: str, img: ndarray, title: str, subtitle: List[str], n
 	plt.savefig(path)
 
 
-####################################################################################################
+################################################################################
 # MAIN
-####################################################################################################
+################################################################################
 
 if __name__ == '__main__':
 
-	folders = [d for d in os.listdir('./dat/') if d[-5:]=='.SAFE']
-	files   = os.listdir('./dat/' + folders[0])
-	xml_file = None
+	folders  = [d for d in os.listdir('./dat/') if d[-5:]=='.SAFE']
+	# A SINGLE FOLDER
+	files    = os.listdir('./dat/' + folders[0])
+	xmlcheck = [f for f in files if f.endswith('.xml')]
 	pass
-
 	# #OPEN IMAGE POINTER
 	# new_b02 = rio.open(NEW_B02_PATH)
 	# new_b03 = rio.open(NEW_B03_PATH)
 	# new_b04 = rio.open(NEW_B04_PATH)
 	# new_b8a = rio.open(NEW_B8A_PATH)
 	# new_tci = rio.open(NEW_TCI_PATH)
-
 	# #LOAD IMAGE
 	# b02 = new_b02.read()
 	# b03 = new_b03.read()
 	# b04 = new_b04.read()
 	# b8a = new_b8a.read()
 	# tci = new_tci.read()
-
 	# b02 = b02.squeeze(axis=0)
 	# b03 = b03.squeeze(axis=0)
 	# b04 = b04.squeeze(axis=0)
 	# b8a = b8a.squeeze(axis=0)
-
 	# bgr = np.moveaxis(np.stack((b02,b03,b04)),0,-1)
 	# cv.imwrite('bgr_eq.png',bgr)
 	# # RIGHT SHIFT -- np.right_shift() bitwise
 	#NIR->R, R->G, G->B -- colour ir
 	#(B3-B8)/(B3+B8) -- NDWI
-	#RGB COMPOSITE -- np.concatenate([b04_shifted,b03_shifted,b02_shifted],axis=0
+	#RGB COMPOSITE--np.concatenate([b04,b03,b02],axis=0)
