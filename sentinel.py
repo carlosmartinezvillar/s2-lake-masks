@@ -21,11 +21,11 @@ DATA_DIR  = './dat/'
 TILE_SIZE = 512
 
 ################################################################################
-# FUNCTIONs
+# FUNCTIONS
 ################################################################################
 def parse_xml(path: str) -> Tuple[str, List[int], int]:
 	"""
-	Get the datastrip id, band offset, and band quantification value from the 
+	Get the datastrip id, band offset, and band quantification value from the
 	xml metadata file found in path.
 
 	Parameters
@@ -37,9 +37,9 @@ def parse_xml(path: str) -> Tuple[str, List[int], int]:
 	-------
 	datastrip_id: str
 		The extracted datastrip id
-	offset_value: list[int]
-		Bottom-of-atmosphere offsets to shift all values in the corresponding 
-		bands in a raster.
+	offset_value: List[int]
+		Bottom-of-atmosphere offsets to shift values in the corresponding in a 
+		raster by band.
 	quant_value: int
 		Product quantification value, meaning the correct divisor for all bands 
 		to normalize them.
@@ -59,12 +59,18 @@ def parse_xml(path: str) -> Tuple[str, List[int], int]:
 	datastrip      = granule_attrib['datastripIdentifier']
 	granule        = granule_attrib['granuleIdentifier']
 
-	pass
+	pass #----------------------------------------------------------> ADD PARSER
 
 	return datastrip
 
 
-def chip_image(img: ndarray, chp_size: int=512) -> ndarray:
+def remove_borders(image, label):
+	'''
+	
+	'''
+	pass
+
+def chip_image_cpu(img: ndarray, chp_size: int=512) -> ndarray:
 	"""
 	Parameters
 	----------
@@ -80,7 +86,7 @@ def chip_image(img: ndarray, chp_size: int=512) -> ndarray:
 		An array with dimensions (N,chp_size,chp_size) containing the resulting 
 		images, where N is the number of resulting chips from the image.
 	"""
-	pass
+	
 
 
 def chip_image_gpu(img: ndarray, chp_size: int=512) -> ndarray:
@@ -129,9 +135,9 @@ def clip_tail(img: ndarray, bottom: int=1, top: int=99) -> ndarray:
 		raise AssertionError from e
 
 
-def unit_normalize(img: ndarray, by_band: bool=False) -> ndarray:
+def unit_normalize(img: ndarray, by_band: bool=True) -> ndarray:
 	"""
-	Unit-normalize a set of bands individually or across all bands.
+	Unit-normalize a set of bands individually, or across all bands.
 	
 	Parameters
 	----------
@@ -149,14 +155,13 @@ def unit_normalize(img: ndarray, by_band: bool=False) -> ndarray:
 		The normalized image
 
 	"""
-
 	if by_band is False:
 		return (img - img.min()) / (img.max() - img.min())
 
 	else:
-		n_bs = img.shape[0] #assuming bands is outermost axis
-		mins = np.array( [band.min() for band in img] ).reshape((n_bs,1,1))
-		maxs = np.array( [band.max() for band in img] ).reshape((n_bs,1,1))
+		B_n  = img.shape[0] #assuming bands is outermost axis
+		mins = np.array([band.min() for band in img]).reshape((B_n,1,1))
+		maxs = np.array([band.max() for band in img]).reshape((B_n,1,1))
 		return (img - mins) / (maxs - mins)
 
 
@@ -173,11 +178,11 @@ def calculate_ndwi(b3: ndarray, b8: ndarray) -> ndarray:
 	Returns
 	-------
 	result: ndarray
-		A single band ndarray with the calculated NDWI with values in the range (-1,1)
+		A single band ndarray with the calculated NDWI with values in the range 
+		(-1,1).
 	"""
-	#NIR->R, R->G, G->B -- colour ir
-	#(B3-B8)/(B3+B8) -- NDWI
-	result = (b3-b8) / (b3+b8)
+	#NIR->R, R->G, G->B -- colour ir for plotting.
+	result = (b3-b8)/(b3+b8)
 	return result
 
 
@@ -227,11 +232,17 @@ def plot_multip_hist(path: str, img: ndarray, title: str, subtitle: List[str], n
 
 if __name__ == '__main__':
 
-	folders  = [d for d in os.listdir('./dat/') if d[-5:]=='.SAFE']
+	#.SAFE folders in data directory
+	folders  = [d for d in os.listdir(DATA_DIR) if d[-5:]=='.SAFE']
+	
 	# A SINGLE FOLDER
-	files    = os.listdir('./dat/' + folders[0])
-	xmlcheck = [f for f in files if f.endswith('.xml')]
+	files = os.listdir(DATA_DIR + folders[0])
+	bands = [b for b in files if b.endswith('10m.jp2')]
+	scl   = '_'.join(bands[0].split('_')[0:2]) + "_SCL_20m.jp2"
+
+	print(bands)
 	pass
+
 	# #OPEN IMAGE POINTER
 	# new_b02 = rio.open(NEW_B02_PATH)
 	# new_b03 = rio.open(NEW_B03_PATH)
@@ -251,6 +262,5 @@ if __name__ == '__main__':
 	# bgr = np.moveaxis(np.stack((b02,b03,b04)),0,-1)
 	# cv.imwrite('bgr_eq.png',bgr)
 	# # RIGHT SHIFT -- np.right_shift() bitwise
-	#NIR->R, R->G, G->B -- colour ir
-	#(B3-B8)/(B3+B8) -- NDWI
+
 	#RGB COMPOSITE--np.concatenate([b04,b03,b02],axis=0)
