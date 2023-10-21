@@ -15,8 +15,10 @@ from typing import Tuple, List
 # WORKFLOW
 ####################################################################################################
 '''
---> list of folders/product ids
-parse_xml()
+--> for each .SAFE folder
+get_gee_id()
+  parse_xml()
+
 
 '''
 
@@ -76,16 +78,13 @@ def get_gee_id(s2_img_id: str) -> str:
 	gee_id = '_'.join([dstrip] + s2_img_id.split('_')[2:6:3])
 	return gee_id
 
-#################################################################################################### -- TODO:
-def download(ee_object,crs,region):
-	if isinstance(ee_object, ee.Image):
-		print('Downloading single image...')
-		url = ee_object.getDownloadUrl({
-				'scale':10,
-				'crs': crs,
-				'format':'GEO_TIFF',
-				'region': region
-			})
+########################################################################################### -- TODO:
+def download_from_drive():
+	pass
+
+
+def drive_file_check():
+	pass
 
 
 def create_export_task(ee_image: ee.Image, id: str, crs: str, crs_matrix: str) -> ee.batch.Task:
@@ -116,21 +115,13 @@ def create_export_task(ee_image: ee.Image, id: str, crs: str, crs_matrix: str) -
 def check_export_task(task):
 	task.status()
 
-
-def split_image():
-	#open one image/band and get crs
-
-	#calculate region of new image via raster indices
-	pass
-
-
 def reproject_coordinates():
 	pass
 
 def open_sentinel_image(path):
 	img_ptr = rio.open(path)
 
-def align_labels_to_input(s2_reader,dw_reader):
+def align(s2_reader,dw_reader):
 	pass
 
 def test_install():
