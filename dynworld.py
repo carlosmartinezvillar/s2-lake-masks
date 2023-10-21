@@ -36,8 +36,7 @@ ns = {
 ####################################################################################################
 def parse_xml(path: str) -> str:
 	"""
-	Get the datastrip id, band offset, and band quantification value from the
-	xml metadata file found in path.
+	Get the datastrip id from the xml metadata file found in path. The path is assumed to be full.
 
 	Parameters
 	----------
@@ -48,28 +47,36 @@ def parse_xml(path: str) -> str:
 	-------
 	datastrip_id: str
 		The extracted datastrip id
+
+	The element in structure of the xml file can be found as follows:
+
+		root.find('n1:General_Info',ns)
+			.find('Product_Info')
+				.find('Product_Organisation')
+					.find('Granule_List')
+						.find('Granule').attrib['datastripIdentifier']
 	"""
 
-	# path check
-	assert os.path.isfile(path), "No file found in path %s" % path
+	assert os.path.isfile(path), "No file found in path %s" % path 	             #fail if wrong path
 
-	# ----------
-	# root.find('n1:General_Info',ns)
-	# 	.find('Product_Info')
-	# 		.find('Product_Organisation')
-	# 			.find('Granule_List')
-	# 				.find('Granule').attrib['datastripIdentifier']
-	# ----------
-
-	#add try-except-raise:
-	root      = ET.parse(path).getroot() #elementree to element
+	root      = ET.parse(path).getroot()
 	prod_info = root.find('n1:General_Info',namespaces=ns).find('Product_Info')
 	granule   = prod_info.find('Product_Organisation').find('Granule_List').find('Granule')
 	# granule   = [e for e in prod_info.iter('Granule')][0]
 	datastrip = granule.attrib['datastripIdentifier'].split('_')[-2][1:]
+	
 	return datastrip
 
 
+def get_gee_id(s2_img_id: str) -> str:
+	'''
+	Read a Sentinel-2 image id string and returns the respective DynamicWorld product id.
+	'''
+	dstrip = parse_xml('./dat/' + s2_img_id + '/MTD.xml')
+	gee_id = '_'.join([dstrip] + s2_img_id.split('_')[2:6:3])
+	return gee_id
+
+#################################################################################################### -- TODO:
 def download(ee_object,crs,region):
 	if isinstance(ee_object, ee.Image):
 		print('Downloading single image...')
@@ -80,19 +87,20 @@ def download(ee_object,crs,region):
 				'region': region
 			})
 
-def create_export_task(ee_image: ee.Image, id: str, crs: str, crs_t: str) -> ee.batch.Task:
+
+def create_export_task(ee_image: ee.Image, id: str, crs: str, crs_matrix: str) -> ee.batch.Task:
 
 	task = ee.batch.Export.image.toDrive(
 		image=ee_image,
-		description=,
+		description=id,
 		folder="dynamic_world_export",
 		scale=10,
 		crs=crs,
-		crsTransform=
+		crsTransform=crs_matrix,
 		format='GEO_TIFF'
 		)
 
-	# maybe this?...
+	# maybe this with a single dict parameter?
 	# task = ee.batch.Export.image.toDrive({
 	# 	image: ee_image,
 	# 	description:
@@ -115,10 +123,6 @@ def split_image():
 	#calculate region of new image via raster indices
 	pass
 
-def build_gee_id(s2_image_id):
-
-	#open metadata to retrieve datastrip id
-	pass
 
 def reproject_coordinates():
 	pass
@@ -144,8 +148,8 @@ if __name__ == '__main__':
 	folders = [d for d in os.listdir('./dat/') if os.path.isdir('./dat/' + d)]
 
 	s2prod  = folders[1]
-	dstrip  = parse_xml('./dat/'+s2prod+'/MTD.xml')
-
+	gee_id  = get_gee_id(s2prod)
+	
 	pass
 
 	# test_collection = ee.ImageCollection("GOOGLE/DYNAMICWORLD/V1")
