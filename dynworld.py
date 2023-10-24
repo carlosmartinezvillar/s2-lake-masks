@@ -75,10 +75,13 @@ def get_gee_id(s2_img_id: str) -> str:
 	Read a Sentinel-2 image id string and returns the respective DynamicWorld product id.
 	'''
 	dstrip = parse_xml('./dat/' + s2_img_id + '/MTD.xml')
-	gee_id = '_'.join([dstrip] + s2_img_id.split('_')[2:6:3])
+	# gee_id = '_'.join([dstrip] + s2_img_id.split('_')[2:6:3]) #---fix this
 	return gee_id
 
 ########################################################################################### -- TODO:
+def get_band_file(id,band_nr):
+	id.split('_')[5] + id.split('_')[2] 
+
 def download_from_drive():
 	pass
 
@@ -141,6 +144,8 @@ if __name__ == '__main__':
 	s2prod  = folders[1]
 	gee_id  = get_gee_id(s2prod)
 	
+	s2_img = rio.open('./dat/' + s2prod + '/' + )
+	dw_img = rio.open('./dat/' + s2prod + '/' + )
 	pass
 
 	# test_collection = ee.ImageCollection("GOOGLE/DYNAMICWORLD/V1")
