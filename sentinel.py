@@ -66,7 +66,7 @@ def parse_xml(path: str) -> Tuple[str, List[int], int]:
 
 def remove_borders(image, label):
 	'''
-	
+	Do we have to tho?...
 	'''
 	pass
 
