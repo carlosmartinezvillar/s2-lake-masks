@@ -13,18 +13,6 @@ from typing import Tuple, List
 # ee.Initialize()
 
 ####################################################################################################
-# WORKFLOW
-####################################################################################################
-'''
---> for each .SAFE folder
-get_gee_id()
-  parse_xml()
-
-
-'''
-
-
-####################################################################################################
 #GLOBAL VARS, NAMESPACES, ETC.
 ####################################################################################################
 
@@ -53,7 +41,7 @@ def parse_xml(path: str) -> str:
 	datastrip_id: str
 		The extracted datastrip id
 
-	Following the structure of the xml file:
+	the structure of the xml file is:
 
 		root.find('n1:General_Info',ns)
 			.find('Product_Info')
@@ -99,10 +87,12 @@ def get_band_files(s2_img_id: str, bands: [str]) -> [str]:
 	return list(map(get_band_file,[s2_img_id]*len(bands),bands))
 
 
-def trim_label_borders(dw_array):
+def remove_borders_as_array(dw_array):
+	'''
+	Take the ndarray of a dynamic world image as input and return a copy without its zero-valued 
+	borders and a dictionary with the indices 
+	'''
 	top,bottom,left,right = 0,dw_array.shape[0],0,dw_array.shape[1]
-
-	print(top,bottom,left,right)
 
 	while(dw_array[top,:].sum() == 0):
 		top += 1
@@ -116,9 +106,55 @@ def trim_label_borders(dw_array):
 	while(dw_array[:,right-1].sum() == 0):
 		right -= 1
 
-	print(top,bottom,left,right)
-	return dw_array[top:bottom,left:right]
+	return dw_array[top:bottom,left:right],{'top':top,'bottom':bottom,'left':left,'right':right}
+
+
+def remove_borders(dw_reader):
+	'''
+	Window(col_off,row_off,width,height)
+	'''
+	top,bottom,left,right = 0,dw_reader.height,0,dw_reader.width
+
+	while(True):
+		row = dw_reader.read(1,window=rio.windows.Window(0,top,dw_reader.width,1))
+		if row.sum() == 0:
+			top += 1
+		else:
+			break
+
+	while(True):
+		row = dw_reader.read(1,window=rio.windows.Window(0,bottom-1,dw_reader.width,1))
+		if row.sum() == 0:
+			bottom -= 1
+		else:
+			break
+
+	while(True):
+		col = dw_reader.read(1,window=rio.windows.Window(left,0,1,dw_reader.height))
+		if col.sum() == 0:
+			left += 1
+		else:
+			break
+
+	while(True):
+		col = dw_reader.read(1,window=rio.windows.Window(right-1,0,1,dw_reader.height))
+		if col.sum() == 0:
+			right -= 1
+		else:
+			break
+
+	return {'top':top, 'bottom':bottom, 'left':left, 'right':right}
+ 
 ########################################################################################### -- TODO:
+def get_windows():
+	'''
+	Given a set of starting and stopping boundaries, returns a list of block indices i,j and window 
+	objects to pass to a rasterio DatasetReader.
+	'''
+	result = []
+	return result
+
+
 def download_from_drive():
 	pass
 
@@ -128,6 +164,23 @@ def drive_file_check():
 
 
 def create_export_task(ee_image: ee.Image, id: str, crs: str, crs_matrix: str) -> ee.batch.Task:
+	'''
+	Parameters
+	----------
+	ee_image : ee.Image
+		google earth engnine image object.
+	id : str
+		a string corresponding to the name of the file outputted to google drive
+	crs : str
+		coordinate reference system to project to in GEE
+	crs_matrix : str
+		Transform matrix in exported GeoTIFF file
+
+	Returns
+	-------
+	task : ee.batch.Task
+		Task object that can be used to check status of export task
+	'''
 
 	task = ee.batch.Export.image.toDrive(
 		image=ee_image,
@@ -138,7 +191,6 @@ def create_export_task(ee_image: ee.Image, id: str, crs: str, crs_matrix: str) -
 		crsTransform=crs_matrix,
 		format='GEO_TIFF'
 		)
-
 
 	# maybe this with a single dict parameter?
 	# task = ee.batch.Export.image.toDrive({
@@ -156,19 +208,28 @@ def create_export_task(ee_image: ee.Image, id: str, crs: str, crs_matrix: str) -
 def check_export_task(task):
 	task.status()
 
+
 def reproject_coordinates():
 	pass
+
 
 def open_sentinel_image(path):
 	img_ptr = rio.open(path)
 
+
 def align(s2_reader,dw_reader):
 	pass
+
 
 def test_install():
 	# ee.Authenticate()
 	ee.Initialize()
 	print(ee.Image("NASA/NASADEM_HGT/001").get("title").getInfo())
+
+def export_product_csv():
+	folders = [d for d in os.listdir(DATA_DIR) if os.path.isdir(DATA_DIR + d)]
+	print(len(folders))
+	print(folders)	
 
 ####################################################################################################
 # MAIN
@@ -177,7 +238,7 @@ def test_install():
 if __name__ == '__main__':
 	# test_install()
 
-	folders = [d for d in os.listdir('./dat/') if os.path.isdir('./dat/' + d)]
+	folders = [d for d in os.listdir(DATA_DIR) if os.path.isdir(DATA_DIR + d)]
 
 	s2prod  = folders[1]
 	gee_id  = get_gee_id(s2prod)
@@ -186,7 +247,7 @@ if __name__ == '__main__':
 
 	s2 = rio.open(s2path,'r',tiled=True,blockxsize=256,blockysize=256)
 	dw = rio.open(dwpath,'r',tiled=True,blockxsize=256,blockysize=256)
-	# align(s2,dw)
+
 	dw_xy_ul = dw.xy(0,0,offset='center')
 	dw_xy_ll = dw.xy(dw.height-1,0,offset='center')
 	dw_xy_lr = dw.xy(dw.height-1,dw.width-1,offset='center')
@@ -198,7 +259,18 @@ if __name__ == '__main__':
 	s2_idx_ur = s2.index(dw_xy_ur[0],dw_xy_ur[1],op=math.floor)
 
 	dwarr = dw.read(1)
-	dwarr = trim_label_borders(dwarr)
+
+	start = time.time()
+	arr1, dict1 = remove_borders_as_array(dwarr)
+	end   = time.time()
+	print("Time array: %f" % (end-start))
+
+	start = time.time()
+	dict2 = remove_borders(dw)
+	end = time.time()
+	print("Time windowed: %f" % (end-start))
+
+
 	pass
 
 	# test_collection = ee.ImageCollection("GOOGLE/DYNAMICWORLD/V1")
@@ -218,4 +290,14 @@ if __name__ == '__main__':
 
 	#TODO -- 
 
+####################################################################################################
+# WORKFLOW
+####################################################################################################
+'''
+--> for each .SAFE folder
+get_gee_id()
+  parse_xml()
+
+
+'''
 	
