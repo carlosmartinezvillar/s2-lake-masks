@@ -17,8 +17,8 @@ ndarray = np.ndarray #quick fix...
 # GLOBAL VARIABLES
 ################################################################################
 plt.style.use('fast')
-DATA_DIR  = './dat/'
-TILE_SIZE = 512
+DATA_DIR  = './dat/'  #<---- change this to argparse
+TILE_SIZE = 256
 
 ################################################################################
 # FUNCTIONS
@@ -43,32 +43,135 @@ def parse_xml(path: str) -> Tuple[str, List[int], int]:
 	quant_value: int
 		Product quantification value, meaning the correct divisor for all bands 
 		to normalize them.
-	"""
-	path = DATA_DIR + row[1] + '/MTD.xml'
-	print("--> Parsing %s..." % path)
 
-	# if this throws AssertError something's very wrong...
+	Details
+	-------
+	xml file is organized like this:
+	
+		root.find('n1:General_Info',ns)
+			.find('Product_Info')
+				.find('Product_Organisation')
+					.find('Granule_List')
+						.find('Granule').attrib['datastripIdentifier']
+
+	"""
+
+	#fail if wrong path
 	assert os.path.isfile(path), "No file found in path %s" % path
 
-	root         = ET.parse(path).getroot()
-	gral_info    = root.find('n1:General_Info',MTD_NS)
-	product_info = gral_info.find('Product_Info')
-	product_char = gral_info.find('Product_Image_Characteristics')
-	#INSIDE TAG <Product_Info> -- ALWAYS in file
-	granule_attrib = list(product_info.iter('Granule'))[0].attrib
-	datastrip      = granule_attrib['datastripIdentifier']
-	granule        = granule_attrib['granuleIdentifier']
-
-	pass #----------------------------------------------------------> ADD PARSER
-
+	root      = ET.parse(path).getroot()
+	prod_info = root.find('n1:General_Info',namespaces=ns).find('Product_Info')
+	granule   = prod_info.find('Product_Organisation').find('Granule_List').find('Granule')
+	# granule   = [e for e in prod_info.iter('Granule')][0]
+	datastrip = granule.attrib['datastripIdentifier'].split('_')[-2][1:]
+	
 	return datastrip
 
 
-def remove_borders(image, label):
+def get_band_file_path(s2_img_id: str, band: str) -> str:
 	'''
-	Do we have to tho?...
+	Given a Sentinel-2 product name and band, return the band image file name.
 	'''
-	pass
+	date = s2_img_id[11:26]
+	tile = s2_img_id[38:44]
+	return '_'.join([tile, date, band, '10m.jp2'])
+
+
+def get_band_file_paths(s2_img_id: str, bands: [str]) -> [str]:
+	'''
+	Given a Sentinel-2 product name and bands, return all band image file names.
+	'''
+	return list(map(get_band_file,[s2_img_id]*len(bands),bands))
+
+
+def remove_borders_as_array(dw_array):
+	'''
+	Take the ndarray of a dynamic world image as input and return a copy without its zero-valued 
+	borders, and a dictionary with the indices of the first and last row and first and last column 
+	in the array without the borders.
+	'''
+	top,bottom,left,right = 0,dw_array.shape[0]-1,0,dw_array.shape[1]-1
+
+	while(dw_array[top,:].sum() == 0):
+		top += 1
+
+	while(dw_array[bottom,:].sum() == 0):
+		bottom -= 1
+
+	while(dw_array[:,left].sum() == 0):
+		left += 1
+
+	while(dw_array[:,right].sum() == 0):
+		right -= 1
+
+	return dw_array[top:bottom+1,left:right+1],{'top':top,'bottom':bottom,'left':left,'right':right}
+
+
+def remove_borders(src):
+	'''
+	Take a rasterio reader object for a dynamicworld image and get the indices of the new boundary 
+	pixels with the no values removed from the top, bottom, left, and right.
+	'''
+	top,bottom,left,right = 0,src.height-1,0,src.width-1
+
+	while(True):
+		row = src.read(1,window=rio.windows.Window(0,top,src.width,1))
+		if row.sum() == 0:
+			top += 1
+		else:
+			break
+
+	while(True):
+		row = src.read(1,window=rio.windows.Window(0,bottom,src.width,1))
+		if row.sum() == 0:
+			bottom -= 1
+		else:
+			break
+
+	while(True):
+		col = src.read(1,window=rio.windows.Window(left,0,1,src.height))
+		if col.sum() == 0:
+			left += 1
+		else:
+			break
+
+	while(True):
+		col = src.read(1,window=rio.windows.Window(right,0,1,src.height))
+		if col.sum() == 0:
+			right -= 1
+		else:
+			break
+
+	return {'top':top, 'bottom':bottom, 'left':left, 'right':right}
+
+
+def dw_idx_to_s2(dw,s2,idx_dict):
+	# s2 indexes:
+	# (18, 3391) (10959, 3391) (10959, 10958) (18, 10958) before cleaning
+	# (19, 3391) (10958, 3391) (10958, 10958) (19, 10958) after
+	dw_xy_ul = dw.xy(idx_dict['top'],idx_dict['left'],offset='center')
+	dw_xy_ll = dw.xy(idx_dict['bottom'],idx_dict['left'],offset='center')
+	dw_xy_lr = dw.xy(idx_dict['bottom'],idx_dict['right'],offset='center')
+	dw_xy_ur = dw.xy(idx_dict['top'],idx_dict['right'],offset='center')
+	s2_idx_ul = s2.index(dw_xy_ul[0],dw_xy_ul[1],op=math.floor)
+	s2_idx_ll = s2.index(dw_xy_ll[0],dw_xy_ll[1],op=math.floor)
+	s2_idx_lr = s2.index(dw_xy_lr[0],dw_xy_lr[1],op=math.floor)
+	s2_idx_ur = s2.index(dw_xy_ur[0],dw_xy_ur[1],op=math.floor)
+
+	#return corners
+	return s2_idx_ul,s2_idx_ll,s2_idx_lr,s2_idx_ur
+
+
+def get_windows():
+	'''
+	Given a set of starting and stopping boundaries, returns a list of block indices i,j and window 
+	objects to pass to a rasterio DatasetReader.
+
+	order in window object: Window(col_off,row_off,width,height)
+	'''
+	result = []
+	return result
+
 
 def chip_image_cpu(img: ndarray, chp_size: int=512) -> ndarray:
 	"""
@@ -243,24 +346,25 @@ if __name__ == '__main__':
 	print(bands)
 	pass
 
-	# #OPEN IMAGE POINTER
-	# new_b02 = rio.open(NEW_B02_PATH)
-	# new_b03 = rio.open(NEW_B03_PATH)
-	# new_b04 = rio.open(NEW_B04_PATH)
-	# new_b8a = rio.open(NEW_B8A_PATH)
-	# new_tci = rio.open(NEW_TCI_PATH)
-	# #LOAD IMAGE
-	# b02 = new_b02.read()
-	# b03 = new_b03.read()
-	# b04 = new_b04.read()
-	# b8a = new_b8a.read()
-	# tci = new_tci.read()
+	# #one product
+	# s2prod  = folders[1]
+	# gee_id  = get_gee_id(s2prod)
+	# s2path = DATA_DIR + s2prod + '/' +  get_band_file_path(s2prod,'B02')
+	# dwpath = DATA_DIR + gee_id + '.tif'
+
+	# s2 = rio.open(s2path,'r',tiled=True,blockxsize=256,blockysize=256)
+	# dw = rio.open(dwpath,'r',tiled=True,blockxsize=256,blockysize=256)
+
+	# # indices of first and last non-zero pixels in each direction in dw
+	# idx_dict = remove_borders(dw)
+
+	# # indices in s2 img of index dict from dw
+	# ul,ll,lr,ur = dw_idx_to_s2(dw,s2,idx_dict)
+	# print(ul,ll,lr,ur)
+
+	# #Some lost notes...
 	# b02 = b02.squeeze(axis=0)
-	# b03 = b03.squeeze(axis=0)
-	# b04 = b04.squeeze(axis=0)
-	# b8a = b8a.squeeze(axis=0)
 	# bgr = np.moveaxis(np.stack((b02,b03,b04)),0,-1)
 	# cv.imwrite('bgr_eq.png',bgr)
 	# # RIGHT SHIFT -- np.right_shift() bitwise
-
 	#RGB COMPOSITE--np.concatenate([b04,b03,b02],axis=0)
