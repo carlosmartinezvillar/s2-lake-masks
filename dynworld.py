@@ -4,9 +4,6 @@ import numpy as np
 import ee #earth engine Python API
 import rasterio as rio
 import xml.etree.ElementTree as ET
-from PIL import Image
-import math
-# import pyproj
 
 from typing import Tuple, List
 # ee.Authenticate()
@@ -21,7 +18,14 @@ ns = {
 	'another':"https://psd-14.sentinel2.eo.esa.int/PSD/User_Product_Level-2A.xsd"
 	}
 
-DATA_DIR = "./dat/"
+DATA_DIR = os.getenv('DATA_DIR')
+if DATA_DIR is None:
+	DATA_DIR = "./dat/"
+
+if not os.path.isdir(DATA_DIR):
+	print("DATA_DIR variable not set. No dir %s" % DATA_DIR)
+	print("Exiting.")
+	sys.exit(1)
 
 DW_PALETTE_10 = [
 	'00ff00','419bdf', '397d49', '88b053', '7a87c6',
@@ -92,8 +96,7 @@ def select_shift_unmask(ee_id):
 
 
 ########################################################################################### -- TODO:
-def create_task(ee_image: ee.Image, ee_id: str,
- 				s2_rdr: rio.io.DatasetReader) -> ee.batch.Task:
+def create_task(ee_image: ee.Image, ee_id: str, s2_rdr: rio.io.DatasetReader) -> ee.batch.Task:
 	'''
 	Parameters
 	----------
@@ -109,7 +112,7 @@ def create_task(ee_image: ee.Image, ee_id: str,
 	task : ee.batch.Task
 		Task object that can be used to start and check export task to google drive
 	'''
-	print("Creating task for product %s..." % ee_id)
+	print("Creating Drive task for product %s..." % ee_id)
 
 	if type(s2_rdr) is rio.io.DatasetReader:
 		s2_crs   = s2_rdr.crs.to_string()
@@ -136,14 +139,8 @@ def create_task(ee_image: ee.Image, ee_id: str,
 
 
 def start_task(task: ee.batch.Task ,id: str):
-	print("Launching task %s..." % id)
+	print("Launching Drive task %s..." % id)
 	task.start()
-
-# ---> to do...
-def check_task(task: ee.batch.Task):
-	status_dict = task.status()
-	runtime = status_dict['update_timestamp_ms'] - status_dict['creation_timestamp_ms']
-	runtime_mins = runtime / 1000 / 60
 
 
 ####################################################################################################
@@ -152,6 +149,7 @@ def check_task(task: ee.batch.Task):
 # ITERATE AND CALL DOWNLOAD TASK
 if __name__ == '__main__':
 
+	print("Running ee.Initialize().")
 	ee.Initialize()
 
 	safe_folders = [d for d in os.listdir(DATA_DIR) if os.path.isdir(DATA_DIR + d)]
@@ -178,4 +176,3 @@ if __name__ == '__main__':
 	# LAUNCH TASKS
 	for i,t in enumerate(tasks):
 		start_task(t,ee_ids[i])
-
