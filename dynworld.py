@@ -19,7 +19,7 @@ ns = {
 	}
 
 DATA_DIR = os.getenv('DATA_DIR')
-if DATA_DIR is None:
+if DATA_DIR is None: #local dir, probably empty if cloned
 	DATA_DIR = "./dat/"
 
 if not os.path.isdir(DATA_DIR):
@@ -67,7 +67,7 @@ def get_gee_id(s2_img_id: str) -> str:
 	'''
 	Read a Sentinel-2 image id string and returns the respective DynamicWorld product id.
 	'''
-	dstrip = parse_xml('./dat/' + s2_img_id + '/MTD.xml')
+	dstrip = parse_xml(DATA_DIR + s2_img_id + '/MTD.xml')
 	date,tile = s2_img_id.split('_')[2:6:3]
 	gee_id = '_'.join([date,dstrip,tile])
 	return gee_id
