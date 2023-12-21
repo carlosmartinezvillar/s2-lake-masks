@@ -143,6 +143,15 @@ def start_task(task: ee.batch.Task ,id: str):
 	task.start()
 
 
+def check_empty_files(safe_folders):
+	for folder in safe_folders:
+		for file in os.listdir(DATA_DIR + folder):
+			file_size = os.path.getsize(DATA_DIR + folder + '/' + file)
+			if file_size <= 92:
+				print("%s\t%s\t%i" % (folder,file,file_size))
+
+
+
 ####################################################################################################
 # MAIN
 ####################################################################################################
@@ -155,24 +164,26 @@ if __name__ == '__main__':
 	safe_folders = [d for d in os.listdir(DATA_DIR) if os.path.isdir(DATA_DIR + d)]
 	ee_ids,tasks = [],[]
 
-	# FOR EACH .SAFE -- GET IDs AND CREATE TASKS
-	for folder in safe_folders:
-		#GET IDs and EE Image
-		ee_id  = get_gee_id(folder)
-		ee_ids.append(ee_id)
-		ee_img = select_shift_unmask(ee_id)
+	check_empty_files(safe_folders)
 
-		#LOAD S2 DATA
-		s2_b_path = DATA_DIR + folder + '/' + get_band_file_path(folder,'B02')
-		s2_b_read = rio.open(s2_b_path,'r')
+	# # FOR EACH .SAFE -- GET IDs AND CREATE TASKS
+	# for folder in safe_folders:
+	# 	#GET IDs and EE Image
+	# 	ee_id  = get_gee_id(folder)
+	# 	ee_ids.append(ee_id)
+	# 	ee_img = select_shift_unmask(ee_id)
 
-		#CREATE TASK
-		task = create_task(ee_img,ee_id,s2_b_read)
-		tasks.append(task)
+	# 	#LOAD S2 DATA
+	# 	s2_b_path = DATA_DIR + folder + '/' + get_band_file_path(folder,'B02')
+	# 	s2_b_read = rio.open(s2_b_path,'r')
 
-		#CLEAN UP
-		s2_b_read.close()
+	# 	#CREATE TASK
+	# 	task = create_task(ee_img,ee_id,s2_b_read)
+	# 	tasks.append(task)
 
-	# LAUNCH TASKS
-	for i,t in enumerate(tasks):
-		start_task(t,ee_ids[i])
+	# 	#CLEAN UP
+	# 	s2_b_read.close()
+
+	# # LAUNCH TASKS
+	# for i,t in enumerate(tasks):
+	# 	start_task(t,ee_ids[i])
