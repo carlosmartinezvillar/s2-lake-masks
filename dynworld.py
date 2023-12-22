@@ -164,7 +164,7 @@ if __name__ == '__main__':
 	safe_folders = [d for d in os.listdir(DATA_DIR) if os.path.isdir(DATA_DIR + d)]
 	ee_ids,tasks = [],[]
 
-	check_empty_files(safe_folders)
+	# check_empty_files(safe_folders)
 
 	# # FOR EACH .SAFE -- GET IDs AND CREATE TASKS
 	# for folder in safe_folders:
