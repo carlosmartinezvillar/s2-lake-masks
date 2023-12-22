@@ -57,13 +57,13 @@ def download_errored_files():
 		d = datetime[6:8]	
 		safe_src = '/'.join(["esa:/EODATA/Sentinel-2/MSI/L2A",y,m,d,folder]) #.SAFE
 
-		xml_path = safe_src + '/' + "MTD_MSIL2A.xml" #XML
+		xml_src = safe_src + '/' + "MTD_MSIL2A.xml" #XML
 
 		p1       = sp.run(["rclone","lsd",safe_src+"/GRANULE"],stdout=sp.PIPE) #BANDS
 		subdir   = p1.stdout.decode().split()[-1]
 		tile     = folder.split('_')[5]
 
-		for b in ["B02,B03","B04","B08"]:
+		for b in ["B02","B03","B04","B08"]:
 			band_file = '_'.join([tile,datetime,b,"10m.jp2"])
 			band_src  = '/'.join([safe_src,"GRANULE",subdir,"IMG_DATA","R10m",band_file])
 			p2 = sp.run(["rclone","copy",band_src,DATA_DIR+folder,"-P"])
@@ -75,4 +75,5 @@ def download_errored_files():
 
 if __name__ == '__main__':
 
-	download_empty_files()
+	# download_empty_files()
+	download_errored_files()
