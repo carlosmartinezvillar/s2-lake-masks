@@ -164,26 +164,26 @@ if __name__ == '__main__':
 	safe_folders = [d for d in os.listdir(DATA_DIR) if os.path.isdir(DATA_DIR + d)]
 	ee_ids,tasks = [],[]
 
-	check_empty_files(safe_folders)
+	# check_empty_files(safe_folders)
 
-	# # FOR EACH .SAFE -- GET IDs AND CREATE TASKS
-	# for folder in safe_folders:
-	# 	#GET IDs and EE Image
-	# 	ee_id  = get_gee_id(folder)
-	# 	ee_ids.append(ee_id)
-	# 	ee_img = select_shift_unmask(ee_id)
+	# FOR EACH .SAFE -- GET IDs AND CREATE TASKS
+	for folder in safe_folders:
+		#GET IDs and EE Image
+		ee_id  = get_gee_id(folder)
+		ee_ids.append(ee_id)
+		ee_img = select_shift_unmask(ee_id)
 
-	# 	#LOAD S2 DATA
-	# 	s2_b_path = DATA_DIR + folder + '/' + get_band_file_path(folder,'B02')
-	# 	s2_b_read = rio.open(s2_b_path,'r')
+		#LOAD S2 DATA
+		s2_b_path = DATA_DIR + folder + '/' + get_band_file_path(folder,'B02')
+		s2_b_read = rio.open(s2_b_path,'r')
 
-	# 	#CREATE TASK
-	# 	task = create_task(ee_img,ee_id,s2_b_read)
-	# 	tasks.append(task)
+		#CREATE TASK
+		task = create_task(ee_img,ee_id,s2_b_read)
+		tasks.append(task)
 
-	# 	#CLEAN UP
-	# 	s2_b_read.close()
+		#CLEAN UP
+		s2_b_read.close()
 
-	# # LAUNCH TASKS
-	# for i,t in enumerate(tasks):
-	# 	start_task(t,ee_ids[i])
+	# LAUNCH TASKS
+	for i,t in enumerate(tasks):
+		start_task(t,ee_ids[i])
