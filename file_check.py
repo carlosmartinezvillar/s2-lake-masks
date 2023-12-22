@@ -1,4 +1,5 @@
 import subprocess as sp
+import os
 
 DATA_DIR = os.getenv('DATA_DIR') #trailing /
 
@@ -18,7 +19,7 @@ for row in empty_files:
 
 	if prev_safe_folder == safe_folder:
 		subdir = prev_subdir
-		# print(" "*len(safe_folder)," ",subdir," ",band_file)
+		# print(" "*len(safe_folde)," ",subdir," ",band_file)
 	else:
 		datetime = safe_folder.split("_")[2]
 		y = datetime[0:4]
