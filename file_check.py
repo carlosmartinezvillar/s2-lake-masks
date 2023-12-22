@@ -48,7 +48,9 @@ def download_errored_files():
 
 	for folder in safe_folders:
 
-		if folder in current_folders:
+		# if folder in current_folders:
+			# continue
+		if len(os.listdir(DATA_DIR+folder)) > 4: #non-empty safe folder
 			continue
 
 		datetime = folder.split('_')[2]
