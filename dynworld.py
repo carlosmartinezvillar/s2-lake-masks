@@ -141,7 +141,10 @@ def create_task(ee_image: ee.Image, ee_id: str, s2_rdr: rio.io.DatasetReader) ->
 
 def start_task(task: ee.batch.Task ,id: str):
 	print("Launching Drive task %s..." % id)
-	task.start()
+	try:
+		task.start()
+	except Exception as e:
+		print("Error launching task. Skipping...")
 
 
 def check_empty_files(safe_folders):
@@ -166,12 +169,17 @@ if __name__ == '__main__':
 	ee_ids,tasks = [],[]
 
 	# check_empty_files(safe_folders)
+	prev_tasks = [i['description'] for i in ee.batch.data.getTaskList()]
 
 	# FOR EACH .SAFE -- GET IDs AND CREATE TASKS
 	for i,folder in enumerate(safe_folders):
 		#GET IDs and EE Image
 		print("[%i/%i] Parsing xml in %s.." % (i,len(safe_folders),folder))
 		ee_id  = get_gee_id(folder)
+
+		if ee_id in prev_tasks:
+			continue
+
 		ee_ids.append(ee_id)
 		ee_img = select_shift_unmask(ee_id)
 
@@ -190,3 +198,4 @@ if __name__ == '__main__':
 	# LAUNCH TASKS
 	for i,t in enumerate(tasks):
 		start_task(t,ee_ids[i])
+
