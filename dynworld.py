@@ -68,7 +68,7 @@ def get_gee_id(s2_img_id: str) -> str:
 	Read a Sentinel-2 image id string and returns the respective DynamicWorld product id.
 	'''
 	xml_path =  [d for d in os.listdir(DATA_DIR + s2_img_id) if d[-3:]=='xml'][0]
-	dstrip = parse_xml(DATA_DIR + s2_img_id + '/' xml_path)
+	dstrip = parse_xml(DATA_DIR + s2_img_id + '/' + xml_path)
 	date,tile = s2_img_id.split('_')[2:6:3]
 	gee_id = '_'.join([date,dstrip,tile])
 	return gee_id
