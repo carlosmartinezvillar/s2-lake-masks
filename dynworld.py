@@ -4,6 +4,7 @@ import numpy as np
 import ee #earth engine Python API
 import rasterio as rio
 import xml.etree.ElementTree as ET
+import sys
 
 from typing import Tuple, List
 # ee.Authenticate()
@@ -113,7 +114,6 @@ def create_task(ee_image: ee.Image, ee_id: str, s2_rdr: rio.io.DatasetReader) ->
 	task : ee.batch.Task
 		Task object that can be used to start and check export task to google drive
 	'''
-	print("Creating Drive task for product %s..." % ee_id)
 
 	if type(s2_rdr) is rio.io.DatasetReader:
 		s2_crs   = s2_rdr.crs.to_string()
@@ -170,6 +170,7 @@ if __name__ == '__main__':
 	# FOR EACH .SAFE -- GET IDs AND CREATE TASKS
 	for folder in safe_folders:
 		#GET IDs and EE Image
+		print("Parsing xml in %s.." % folder)
 		ee_id  = get_gee_id(folder)
 		ee_ids.append(ee_id)
 		ee_img = select_shift_unmask(ee_id)
@@ -179,6 +180,7 @@ if __name__ == '__main__':
 		s2_b_read = rio.open(s2_b_path,'r')
 
 		#CREATE TASK
+		print("Creating Drive task for product %s..." % folder)		
 		task = create_task(ee_img,ee_id,s2_b_read)
 		tasks.append(task)
 
