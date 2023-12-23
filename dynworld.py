@@ -168,9 +168,9 @@ if __name__ == '__main__':
 	# check_empty_files(safe_folders)
 
 	# FOR EACH .SAFE -- GET IDs AND CREATE TASKS
-	for folder in safe_folders:
+	for i,folder in enumerate(safe_folders):
 		#GET IDs and EE Image
-		print("Parsing xml in %s.." % folder)
+		print("[%i/%i] Parsing xml in %s.." % (i,len(safe_folders),folder))
 		ee_id  = get_gee_id(folder)
 		ee_ids.append(ee_id)
 		ee_img = select_shift_unmask(ee_id)
