@@ -162,7 +162,7 @@ if __name__ == '__main__':
 	print("Running ee.Initialize().")
 	ee.Initialize()
 
-	safe_folders = [d for d in os.listdir(DATA_DIR) if os.path.isdir(DATA_DIR + d)]
+	safe_folders = [d for d in os.listdir(DATA_DIR) if os.path.isdir(DATA_DIR + d) and d[-4:]=='SAFE']
 	ee_ids,tasks = [],[]
 
 	# check_empty_files(safe_folders)
