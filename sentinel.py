@@ -8,6 +8,7 @@ import os
 import xml.etree.ElementTree as ET
 import time
 import sys
+from rasterio.windows import Window
 
 ################################################################################
 # TYPING
@@ -221,18 +222,41 @@ def dw_idx_to_s2(dw,s2,idx_dict):
 	return s2_idx_ul,s2_idx_ll,s2_idx_lr,s2_idx_ur
 
 
-def get_windows():
+def get_windows(s2_rdr, dw_rdr, borders):
 	'''
 	Given a set of starting and stopping boundaries, returns a list of block 
 	indices i,j and window objects to pass to a rasterio DatasetReader.
 
 	order in window object: Window(col_off,row_off,width,height)
 	'''
+
+	n_rows = borders['bottom'] + 1 - borders['top']
+	n_cols = borders['right'] + 1 - borders['left']
+
+	block_rows = n_rows // TILE_SIZE
+	block_cols = n_cols // TILE_SIZE
+
+	N = block_rows*block_cols
+
+	W = []
+
+	for k in N:
+		block_i = k // block_cols
+		block_j = k % block_cols
+
+		row_start = block_i * TILE_SIZE + borders['top']
+		row_stop  = row_start + TILE_SIZE
+		col_start = block_j * TILE_SIZE + borders['left']
+		col_stop  = col_start + TILE_SIZE
+
+		W += [((block_i,block_j),Window(col_start,row_start,TILE_SIZE,TILE_SIZE))]
+		# W += [Window.from_slices((row_start,row_stop),(col_start,col_stop))]
+
 	result = []
 	return result
 
 
-def chip_image_cpu(img: ndarray, chp_size: int=256) -> ndarray:
+def chip_image_cpu(img: ndarray, windows: List[Tuple]) -> ndarray:
 	"""
 	Parameters
 	----------
@@ -419,7 +443,7 @@ if __name__ == '__main__':
 	# # indices of first and last non-zero pixels in each direction in dw
 	idx_dict = remove_borders(lbl)
 	print(idx_dict)
-	print(lbl.height, lbl.width)
+
 
 	# # indices in s2 img of index dict from dw
 	# ul,ll,lr,ur = dw_idx_to_s2(dw,s2,idx_dict)
