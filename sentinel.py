@@ -1,11 +1,13 @@
 import rasterio as rio
-import geopandas as gpd
+# import geopandas as gpd
 import matplotlib.pyplot as plt
-import pandas as pd
+# import pandas as pd
 import numpy as np
-import cv2 as cv
+# import cv2 as cv
 import os
-# import glob
+import xml.etree.ElementTree as ET
+import time
+import sys
 
 ################################################################################
 # TYPING
@@ -16,14 +18,20 @@ ndarray = np.ndarray #quick fix...
 ################################################################################
 # GLOBAL VARIABLES
 ################################################################################
+ns = {
+	'n1':"https://psd-14.sentinel2.eo.esa.int/PSD/User_Product_Level-2A.xsd",
+	'other':"http://www.w3.org/2001/XMLSchema-instance",
+	'another':"https://psd-14.sentinel2.eo.esa.int/PSD/User_Product_Level-2A.xsd"
+	}
+
 plt.style.use('fast')
-DATA_DIR  = './dat/'  #<---- change this to argparse
+DATA_DIR  = './dat/'  #<---- change this to argparse? maybe env
 TILE_SIZE = 256
 
 ################################################################################
 # FUNCTIONS
 ################################################################################
-def parse_xml(path: str) -> Tuple[str, List[int], int]:
+def parse_xml(path: str) -> Tuple[str, int, List[int]]:
 	"""
 	Get the datastrip id, band offset, and band quantification value from the
 	xml metadata file found in path.
@@ -37,10 +45,10 @@ def parse_xml(path: str) -> Tuple[str, List[int], int]:
 	-------
 	datastrip_id: str
 		The extracted datastrip id
-	offset_value: List[int]
+	offsets: List[int]
 		Bottom-of-atmosphere offsets to shift values in the corresponding in a 
 		raster by band.
-	quant_value: int
+	quant_val: int
 		Product quantification value, meaning the correct divisor for all bands 
 		to normalize them.
 
@@ -48,11 +56,19 @@ def parse_xml(path: str) -> Tuple[str, List[int], int]:
 	-------
 	xml file is organized like this:
 	
-		root.find('n1:General_Info',ns)
-			.find('Product_Info')
-				.find('Product_Organisation')
-					.find('Granule_List')
-						.find('Granule').attrib['datastripIdentifier']
+	<n1:General_Info>
+		<Product_Info>
+			<Product_Organisation>
+				<Granule_List>
+					<Granule datastripIdentifier="" granuleIdentifier="">
+
+	Hence, we parse with
+
+	root.find('n1:General_Info',ns)
+		.find('Product_Info')
+			.find('Product_Organisation')
+				.find('Granule_List')
+					.find('Granule').attrib['datastripIdentifier']
 
 	"""
 
@@ -62,10 +78,52 @@ def parse_xml(path: str) -> Tuple[str, List[int], int]:
 	root      = ET.parse(path).getroot()
 	prod_info = root.find('n1:General_Info',namespaces=ns).find('Product_Info')
 	granule   = prod_info.find('Product_Organisation').find('Granule_List').find('Granule')
-	# granule   = [e for e in prod_info.iter('Granule')][0]
+	# granule   = [e for e in prod_info.iter('Granule')][0]x
 	datastrip = granule.attrib['datastripIdentifier'].split('_')[-2][1:]
 	
-	return datastrip
+
+	### ADD BAND OFFSET CHECK AND RETURN IF EXISTS !!!
+	'''
+	<Product_Image_Characteristics>
+		<QUANTIFICATION_VALUES LIST>
+			<BOA_QUANTIFICATION_VALUE>
+		<Reflectance_Conversion>
+		....
+
+	<Product_Image_Characteristics>
+		<QUANTIFICATION_VALUES LIST>
+			<BOA_QUANTIFICATION_VALUE>
+		<BOA_ADD_OFFSET_VALUES_LIST>
+			<BOA_ADD_OFFSET band_id="0">-1000</BOA_ADD_OFFSET>
+			<BOA_ADD_OFFSET band_id="1">-1000</BOA_ADD_OFFSET>
+			<BOA_ADD_OFFSET band_id="2">-1000</BOA_ADD_OFFSET>
+			...
+			<BOA_ADD_OFFSET band_id="12">-1000</BOA_ADD_OFFSET>			
+		<Reflectance_Conversion>
+		....
+
+	something like:
+	'''
+	prod_char = root.find('n1:General_Info',namespaces=ns).find('Product_Image_Characteristics')
+	boa_quant = prod_char.find('QUANTIFICATION_VALUES_LIST').find('BOA_QUANTIFICATION_VALUE') #get item
+	quant_val = int(boa_quant.text)
+
+	boa_add = prod_char.find('BOA_ADD_OFFSET_VALUES_LIST') #None | Element 
+	if boa_add is not None:
+		offsets = [int(e.text) for e in boa_add[1:4]] + [int(boa_add[7].text)]
+	else:
+		offsets = [0]*4
+
+	return datastrip,quant_val,offsets
+
+
+def get_gee_id(s2_img_id: str, datastrip: str) -> str:
+	'''
+	Read a Sentinel-2 image id string and returns the respective DynamicWorld product id.
+	'''
+	date,tile = s2_img_id.split('_')[2:6:3]
+	gee_id = '_'.join([date,datastrip,tile])
+	return gee_id
 
 
 def get_band_file_path(s2_img_id: str, band: str) -> str:
@@ -109,8 +167,9 @@ def remove_borders_as_array(dw_array):
 
 def remove_borders(src):
 	'''
-	Take a rasterio reader object for a dynamicworld image and get the indices of the new boundary 
-	pixels with the no values removed from the top, bottom, left, and right.
+	Take a rasterio reader object for a dynamicworld image and get the indices 
+	of the first non-zero values counting from the top, bottom, left, and 
+	right.
 	'''
 	top,bottom,left,right = 0,src.height-1,0,src.width-1
 
@@ -164,8 +223,8 @@ def dw_idx_to_s2(dw,s2,idx_dict):
 
 def get_windows():
 	'''
-	Given a set of starting and stopping boundaries, returns a list of block indices i,j and window 
-	objects to pass to a rasterio DatasetReader.
+	Given a set of starting and stopping boundaries, returns a list of block 
+	indices i,j and window objects to pass to a rasterio DatasetReader.
 
 	order in window object: Window(col_off,row_off,width,height)
 	'''
@@ -173,7 +232,7 @@ def get_windows():
 	return result
 
 
-def chip_image_cpu(img: ndarray, chp_size: int=512) -> ndarray:
+def chip_image_cpu(img: ndarray, chp_size: int=256) -> ndarray:
 	"""
 	Parameters
 	----------
@@ -189,10 +248,10 @@ def chip_image_cpu(img: ndarray, chp_size: int=512) -> ndarray:
 		An array with dimensions (N,chp_size,chp_size) containing the resulting 
 		images, where N is the number of resulting chips from the image.
 	"""
-	
+	return
 
 
-def chip_image_gpu(img: ndarray, chp_size: int=512) -> ndarray:
+def chip_image_gpu(img: ndarray, chp_size: int=256) -> ndarray:
 	pass
 
 
@@ -284,10 +343,13 @@ def calculate_ndwi(b3: ndarray, b8: ndarray) -> ndarray:
 		A single band ndarray with the calculated NDWI with values in the range 
 		(-1,1).
 	"""
-	#NIR->R, R->G, G->B -- colour ir for plotting.
 	result = (b3-b8)/(b3+b8)
 	return result
 
+
+def plot_ndwi(b3,b4,b8):
+	#NIR->R, R->G, G->B -- colour ir for plotting.
+	pass
 
 ################################################################################
 # PLOTTING, HISTOGRAMS, ET CETERA
@@ -311,7 +373,7 @@ def plot_img(path: str, img: ndarray, lib: str='opencv') -> None:
 		print("Please specify a library for plot_img().")
 
 
-def plot_single_hist(path: str, band: ndarray, title: str, n_bins: int) -> None:
+def single_hist(path: str, band: ndarray, title: str, n_bins: int) -> None:
 	fig,ax = plt.subplots()
 	ax.set_title(title)
 	ax.hist(band.flatten(),bins=n_bins)
@@ -319,7 +381,7 @@ def plot_single_hist(path: str, band: ndarray, title: str, n_bins: int) -> None:
 	plt.savefig(path)
 
 
-def plot_multip_hist(path: str, img: ndarray, title: str, subtitle: List[str], n_bins: int) -> None:
+def multip_hist(path: str, img: ndarray, title: str, subtitle: List[str], n_bins: int) -> None:
 	fig, axs = plt.subplots(nrows=1,ncols=bands.shape[0],sharey=True,tight_layout=True)
 	fig.suptitle(title)
 	colors = ['r','g','b','darkred']
@@ -339,24 +401,25 @@ if __name__ == '__main__':
 	folders  = [d for d in os.listdir(DATA_DIR) if d[-5:]=='.SAFE']
 	
 	# A SINGLE FOLDER
-	files = os.listdir(DATA_DIR + folders[0])
-	bands = [b for b in files if b.endswith('10m.jp2')]
-	scl   = '_'.join(bands[0].split('_')[0:2]) + "_SCL_20m.jp2"
+	safe_dir = folders[0]
+	xml_file = [f for f in os.listdir(DATA_DIR + safe_dir) if f[-4:]=='.xml'][0] #bc MTD, MTD_L2A
+	xml_path = DATA_DIR + '/'.join([safe_dir,xml_file])
 
-	print(bands)
-	pass
+	datastrip,quant_val,offset_vals = parse_xml(xml_path)
 
-	# #one product
-	# s2prod  = folders[1]
-	# gee_id  = get_gee_id(s2prod)
-	# s2path = DATA_DIR + s2prod + '/' +  get_band_file_path(s2prod,'B02')
-	# dwpath = DATA_DIR + gee_id + '.tif'
+	gee_id = get_gee_id(safe_dir,datastrip)
+	gee_path = DATA_DIR + '/'.join(["dynamicworld",gee_id]) + '.tif'
 
-	# s2 = rio.open(s2path,'r',tiled=True,blockxsize=256,blockysize=256)
-	# dw = rio.open(dwpath,'r',tiled=True,blockxsize=256,blockysize=256)
+	b02_path = get_band_file_path(safe_dir,'B02')	
+
+	# b02 = rio.open(b02_path,'r',tiled=True,blockxsize=256,blockysize=256)
+	lbl = rio.open(gee_path,'r',tiled=True,blockxsize=256,blockysize=256)
+
 
 	# # indices of first and last non-zero pixels in each direction in dw
-	# idx_dict = remove_borders(dw)
+	idx_dict = remove_borders(lbl)
+	print(idx_dict)
+	print(lbl.height, lbl.width)
 
 	# # indices in s2 img of index dict from dw
 	# ul,ll,lr,ur = dw_idx_to_s2(dw,s2,idx_dict)

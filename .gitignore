@@ -1,2 +1,6 @@
+__pycache__/
 dat/
+fig/
 *.DS_Store
+*.tif
+*.jp2
