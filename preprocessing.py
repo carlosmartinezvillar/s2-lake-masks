@@ -280,6 +280,8 @@ def plot_checkerboard(path,dw_rdr,borders,windows):
 	DW_PALETTE_10 = ['000000','419bdf','397d49','88b053','7a87c6','e49635', 
 	    'dfc35a','c4281b','a59b8f','b39fe1'];
 
+	water_threshold = 128*64
+
 	#Get lines -- red FF0000, yellow FFFF00
 	yellow_line      = np.ones((3,TILE_SIZE))
 	yellow_line[0:2] = 65535
@@ -288,15 +290,19 @@ def plot_checkerboard(path,dw_rdr,borders,windows):
 	red_line[0]      = 65535
 	red_line[1:2]    = 0
 
+	#NEW SIZE OF 
 	height = borders['bottom'] - borders['top'] + 1
 	width  = borders['right'] - borders['left'] + 1
 
 	#WRITER
 	kwargs = dw_rdr.meta.copy()
-	kwargs.update({'count':3,'compress':'lzw','height':height,'width':width})
+	kwargs.update({
+		'count':3,'compress':'lzw','height':height,'width':width,
+		'tiled':True,'blockxsize':256,'blockysize':256})
 	out_ptr = rio.open(path,'w',**kwargs)
 
 	correct_count = 0
+
 
 	#USE WINDOWS TO PLOT SQUARES
 	for _,w in windows:
@@ -309,7 +315,7 @@ def plot_checkerboard(path,dw_rdr,borders,windows):
 			arr3[:,arr==c] = [[r],[g],[b]]	
 
 		#LINES
-		if (arr==0).sum() > 0:
+		if (arr==0).sum() > 4:
 			arr3[:,0,:]  = red_line
 			arr3[:,-1,:] = red_line
 			arr3[:,:,0]  = red_line
@@ -318,11 +324,11 @@ def plot_checkerboard(path,dw_rdr,borders,windows):
 			arr3[:,-2,:] = red_line
 			arr3[:,:,1]  = red_line
 			arr3[:,:,-2] = red_line
+
 		else:
 			n_water = (arr==1).sum()
-			if n_water > 4096  and n_water < TILE_SIZE*TILE_SIZE:
-				arr3[:,0,:]  = yellow_line
-				arr3[:,-1,:] = yellow_line
+			if n_water > water_threshold  and n_water < TILE_SIZE*TILE_SIZE-water_threshold:
+				arr3[:,0,:] = yellow_line
 				arr3[:,:,0]  = yellow_line
 				arr3[:,:,-1] = yellow_line
 				arr3[:,1,:]  = yellow_line
@@ -341,6 +347,7 @@ def plot_checkerboard(path,dw_rdr,borders,windows):
 				arr3[:,-2,:] = red_line
 				arr3[:,:,1]  = red_line
 				arr3[:,:,-2] = red_line
+
 		#WRITE
 		w2 = Window(w.col_off-borders['left'],w.row_off-borders['top'],TILE_SIZE,TILE_SIZE)
 		out_ptr.write(arr3,window=w2,indexes=[1,2,3])
@@ -352,44 +359,52 @@ def plot_checkerboard(path,dw_rdr,borders,windows):
 	remainder_cols = width % TILE_SIZE
 
 	#left edge in the bottom
-	w1 = Window(
+	reader_window = Window(
 		col_off=borders['left'],
 		row_off=borders['top']+block_rows*TILE_SIZE,
 		width=block_cols*TILE_SIZE,
 		height=remainder_rows) #reader,starts at border['top'],borders['left']
 
-	w2 = Window(
+	writer_window = Window(
 		col_off=0,
 		row_off=block_rows*TILE_SIZE,
 		width=block_cols*TILE_SIZE,
 		height=remainder_rows) #writer,starts at 0,0
 
-	arr = dw_rdr.read(1,window=w1)
+	arr = dw_rdr.read(1,window=reader_window)
 	arr3 = np.stack([arr,np.zeros_like(arr),np.zeros_like(arr)],axis=0)
 	for c in range(10):
 		r = int(DW_PALETTE_10[c][0:2],16)
 		g = int(DW_PALETTE_10[c][2:4],16)
 		b = int(DW_PALETTE_10[c][4:6],16)
 		arr3[:,arr==c] = [[r],[g],[b]]
-	out_ptr.write(arr3,window=w2,indexes=[1,2,3])
+	out_ptr.write(arr3,window=writer_window,indexes=[1,2,3])
 
 
 
 	#leftover edge in the right
-	w1 = Window(
+	reader_window = Window(
 		col_off=borders['left']+block_cols*TILE_SIZE,
 		row_off=borders['top'],
 		width = remainder_cols,
 		height = height)
 
-	w2 = Window(
+	writer_window = Window(
 		col_off=block_cols*TILE_SIZE,
 		row_off=0,
 		width=remainder_cols,
 		height=height) #writer, starts at 0,0
 
+	arr = dw_rdr.read(1,window=reader_window)
+	arr3 = np.stack([arr,np.zeros_like(arr),np.zeros_like(arr)],axis=0)
+	for c in range(10):
+		r = int(DW_PALETTE_10[c][0:2],16)
+		g = int(DW_PALETTE_10[c][2:4],16)
+		b = int(DW_PALETTE_10[c][4:6],16)
+		arr3[:,arr==c] = [[r],[g],[b]]
+	out_ptr.write(arr3,window=writer_window,indexes=[1,2,3])
 
-	print("Nr of good blocks: %i" % correct_count)
+	print("Nr of good chips in raster: %i" % correct_count)
 
 	return
 
@@ -796,6 +811,7 @@ if __name__ == '__main__':
 	input_windows = get_windows(input_borders)
 	label_windows = get_windows(label_borders)
 
+	print(safe_dir)
 	plot_checkerboard('test_checkerboard.tif',label,label_borders,label_windows)
 
 	# save_tci_full('./test_tci.tif',[band2,band3,band4],quant_val,offset_vals[0:3])
