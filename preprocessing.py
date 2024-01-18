@@ -108,9 +108,7 @@ def get_ndwi(b3: ndarray, b8: ndarray) -> ndarray:
 		A single band ndarray with the calculated NDWI with values in the range 
 		(-1,1).
 	"""
-	result = (b3-b8)/(b3+b8)
-	return result
-
+	return (b3-b8)/(b3+b8)
 
 ################################################################################
 # PLOTTING, HISTOGRAMS, ET CETERA
@@ -162,7 +160,7 @@ def plot_label(path,dw_rdr,borders,windows):
 	pass
 
 
-def plot_label_multiclass(path,dw_rdr,borders,window=None):
+def plot_label_multiclass(path,dw_rdr,borders):
 	DW_NAMES_10 = ['masked','water','trees','grass','flooded_vegetation',
 		'crops','shrub_and_scrub','built','bare','snow_and_ice'];
 
@@ -170,39 +168,40 @@ def plot_label_multiclass(path,dw_rdr,borders,window=None):
 	    'dfc35a','c4281b','a59b8f','b39fe1'];
 
 
-	if window is None:
-		# number of rows and cols takin the boundaries into acct
-		nrows = borders['bottom'] + 1 - borders['top']
-		ncols = borders['right'] + 1 - borders['left']
-		window = Window(borders['left'],borders['top'],ncols,nrows)
+	# number of rows and cols takin' the boundaries into acct
+	h = borders['bottom'] + 1 - borders['top']
+	w = borders['right'] + 1 - borders['left']
+	read_window = Window(borders['left'],borders['top'],w,h)
 
-	#fix array
-	dw = dw_rdr.read(1,window=window)
+	#read, 1-band to 3-band, plot colors
+	dw = dw_rdr.read(1,window=read_window)
 	dw3 = np.stack([dw,np.zeros_like(dw),np.zeros_like(dw)],axis=0).astype(np.uint8)
 	for i in range(10):
 		# r,g,b = (int(DW_PALETTE_10[i][j:j+2],16) for j in range(0,6,2))
-		r_value = int(DW_PALETTE_10[i][0:2],16)
+		r_value = int(DW_PALETTE_10[i][0:2],16) #hex to int
 		g_value = int(DW_PALETTE_10[i][2:4],16)
 		b_value = int(DW_PALETTE_10[i][4:6],16)
 		dw3[:,dw==i] = [[r_value],[g_value],[b_value]]
 
+	# writer parameters
 	kwargs = dw_rdr.meta.copy()
-	kwargs.update({'height':window.height,'width':window.width,'count':3,
+	kwargs.update({'height':read_window.height,'width':read_window.width,'count':3,
 		'compress':'lzw'})
 
+	#write to path
 	dst = rio.open(path,'w',**kwargs)
 	dst.write(dw3,indexes=[1,2,3])
 	dst.close()
 	return
 
 
-def plot_label_multiclass_windows(path,dw_rdr,borders,windows):
+def plot_label_multiclass_windowed(path,dw_rdr,borders,windows):
 	DW_PALETTE_10 = ['000000','419bdf','397d49','88b053','7a87c6','e49635', 
 	    'dfc35a','c4281b','a59b8f','b39fe1'];
 
 	height = borders['bottom'] + 1 - borders['top']
 	width  = borders['right'] + 1 - borders['left']
-	height = height - (height % TILE_SIZE) + 1 #not sure if this is too safe
+	height = height - (height % TILE_SIZE) + 1 #not sure if safe
 	width = width - (width % TILE_SIZE) + 1
 
 	kwargs = dw_rdr.meta.copy()
@@ -237,20 +236,34 @@ def plot_tci_windows(dst_path,bands,borders,windows):
 	return True
 
 #TODO
-def plot_tci(path, bands, quant_val, offsets):
+def plot_tci(path, bands, quant_val, offsets, borders):
 	"""
 	Writing is in the order B,G,R.
+
+	Parameters
+	----------
+	path: str
+		output file path
+	bands: [rio.DatasetReader]
+		List of dataset reader objects for the three bands
+	quant_val: int
+		The int to divide reflectance values by, given in xml metadata
+	offsets: [int]
+		Array of offsets for each band, most likely all 2000 or zero.
+	borders: dict
+
 	"""
-	# w_size = 512
-	# w = Window(col_off=3603, row_off=5139, width=w_size, height=w_size) #case1 -- water surface
-	# w = Window(col_off=0, row_off=5139, width=w_size, height=w_size) #case2 -- mountain shade
-	# w = Window(col_off=4000, row_off=7443, width=w_size, height=w_size) #case3 -- no data border
+
+	#Full image minus non-labeled borders
 	nrows = borders['bottom'] + 1 - borders['top']
 	ncols = borders['right'] + 1 - borders['left']
 	w = Window(borders['left'],borders['top'],ncols,nrows)
 
+	#Stack bands
 	b,g,r = (_.read(1,window=w) for _ in bands)
 	tci = np.stack([r,g,b],axis=0)
+
+	#shift, norm and clip to [1,65535]
 	tci = (tci + np.array(offsets).reshape(3,1,1)) / quant_val * 65535
 	tci = np.clip(tci,1,65535)
 
@@ -263,8 +276,8 @@ def plot_tci(path, bands, quant_val, offsets):
 	tci[2][mask_b] = 65535
 
 	kwargs = bands[0].meta.copy()
-	kwargs.update({'count':3,'driver':'GTiff','height':w_size,'width':w_size,
-		'dtype':'uint16','compress':'lzw'})
+	kwargs.update({'count':3,'driver':'GTiff','height':nrows,'width':ncols,
+		'dtype':'uint16','compress':'lzw','tiled':True,'blockxsize':TILE_SIZE,'blockysize':TILE_SIZE})
 	with rio.open(path,'w',photometric='RGB',**kwargs) as dst:
 		dst.write(tci,indexes=[1,2,3])
 	print("TCI written to %s" % path)
@@ -308,6 +321,7 @@ def plot_checkerboard(path,dw_rdr,borders,windows):
 	for _,w in windows:
 		arr = dw_rdr.read(1,window=w)
 		arr3 = np.stack([arr,np.zeros_like(arr),np.zeros_like(arr)],axis=0)
+		#plot label colors - hex to int
 		for c in range(10):
 			r = int(DW_PALETTE_10[c][0:2],16)
 			g = int(DW_PALETTE_10[c][2:4],16)
@@ -328,7 +342,8 @@ def plot_checkerboard(path,dw_rdr,borders,windows):
 		else:
 			n_water = (arr==1).sum()
 			if n_water > water_threshold  and n_water < TILE_SIZE*TILE_SIZE-water_threshold:
-				arr3[:,0,:] = yellow_line
+				arr3[:,0,:]  = yellow_line
+				arr3[:,-1,:] = yellow_line
 				arr3[:,:,0]  = yellow_line
 				arr3[:,:,-1] = yellow_line
 				arr3[:,1,:]  = yellow_line
@@ -349,6 +364,7 @@ def plot_checkerboard(path,dw_rdr,borders,windows):
 				arr3[:,:,-2] = red_line
 
 		#WRITE
+		#adjust window:pos in reader (with borders) to pos in writer
 		w2 = Window(w.col_off-borders['left'],w.row_off-borders['top'],TILE_SIZE,TILE_SIZE)
 		out_ptr.write(arr3,window=w2,indexes=[1,2,3])
 
@@ -380,8 +396,6 @@ def plot_checkerboard(path,dw_rdr,borders,windows):
 		arr3[:,arr==c] = [[r],[g],[b]]
 	out_ptr.write(arr3,window=writer_window,indexes=[1,2,3])
 
-
-
 	#leftover edge in the right
 	reader_window = Window(
 		col_off=borders['left']+block_cols*TILE_SIZE,
@@ -394,7 +408,7 @@ def plot_checkerboard(path,dw_rdr,borders,windows):
 		row_off=0,
 		width=remainder_cols,
 		height=height) #writer, starts at 0,0
-
+  
 	arr = dw_rdr.read(1,window=reader_window)
 	arr3 = np.stack([arr,np.zeros_like(arr),np.zeros_like(arr)],axis=0)
 	for c in range(10):
@@ -723,20 +737,30 @@ def adjust_band():
 	pass
 
 #TODO
-def check_label(window: ndarray):
+def check_label_window(arr: ndarray):
 	"""
 	This checks if there's both water and land in the array.
 	"""
-	if (window == 0).sum() > 0: #no data present
+	no_data_mask = arr==0
+	if (no_data_mask).sum() > 4: #if no data > 4 px
+		#red
 		return False
+	else:
+		n_water = (arr==1).sum()
+		if n_water > water_threshold  and n_water < TILE_SIZE*TILE_SIZE-water_threshold:
+			pass
+			#yellow line
 
-	water_mask = window == 1
-	#no water
+			correct_count += 1
+		else:
+			#red line
+			pass
+
 
 	return True
 
 #TODO
-def check_band(window: ndarray):
+def check_band_window(arr: ndarray):
 	if (window == 0).sum() > 0: #no data present
 		return False
 	return True
@@ -783,13 +807,13 @@ if __name__ == '__main__':
 	#.SAFE folders in data directory
 	folders  = [d for d in os.listdir(DATA_DIR) if d[-5:]=='.SAFE']
 	
-	# A SINGLE FOLDER
+	#A SINGLE FOLDER
 	safe_dir = folders[0]
 
 	#PARSE XML INFO
 	xml_file = [f for f in os.listdir(DATA_DIR + safe_dir) if f[-4:]=='.xml'][0] #bc MTD, MTD_L2A
 	xml_path = DATA_DIR + '/'.join([safe_dir,xml_file])
-	datastrip,quant_val,offset_vals = parse_xml(xml_path)
+	datastrip,quant_val,offsets = parse_xml(xml_path)
 
 	#GET FILE PATHS
 	gee_id = get_gee_id(safe_dir,datastrip)
@@ -812,6 +836,8 @@ if __name__ == '__main__':
 	label_windows = get_windows(label_borders)
 
 	print(safe_dir)
+
+	plot_tci(safe_dir[:-5]+'_tci.tif',[band2,band3,band4],quant_val,offsets[0:3],input_borders)
 	plot_checkerboard('test_checkerboard.tif',label,label_borders,label_windows)
 
 	# save_tci_full('./test_tci.tif',[band2,band3,band4],quant_val,offset_vals[0:3])
