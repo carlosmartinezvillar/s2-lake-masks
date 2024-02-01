@@ -9,15 +9,15 @@ import time
 import sys
 from rasterio.windows import Window
 
-################################################################################
+####################################################################################################
 # TYPING
-################################################################################
+####################################################################################################
 from typing import Tuple, List
 ndarray = np.ndarray #quick fix...
 
-################################################################################
+####################################################################################################
 # GLOBAL VARIABLES
-################################################################################
+####################################################################################################
 ns = {
 	'n1':"https://psd-14.sentinel2.eo.esa.int/PSD/User_Product_Level-2A.xsd",
 	'other':"http://www.w3.org/2001/XMLSchema-instance",
@@ -26,12 +26,15 @@ ns = {
 
 plt.style.use('fast')
 DATA_DIR  = './dat/'  #<---- change this to argparse? maybe env
+CHIP_DIR  = DATA_DIR + 'chp/'
 LABEL_DIR = 'dynamicworld'
 TILE_SIZE = 256
+WATER_MIN = 128*64
+WATER_MAX = TILE_SIZE*TILE_SIZE - WATER_MIN
 
-################################################################################
+####################################################################################################
 # BAND ARITHMETIC
-################################################################################
+####################################################################################################
 def clip_tails(img: ndarray, bottom: int=1, top: int=99) -> ndarray:
 	"""
 	Remove the values below the 'bottom' and  above 'top' percent in an image.
@@ -62,9 +65,9 @@ def clip_tails(img: ndarray, bottom: int=1, top: int=99) -> ndarray:
 		raise AssertionError from e
 
 
-def unit_normalize(img: ndarray, by_band: bool=True) -> ndarray:
+def minmax_normalize(img: ndarray, by_band: bool=True) -> ndarray:
 	"""
-	Unit-normalize a set of bands individually, or across all bands.
+	Unit-normalize a set of bands individually, or across all bands, using min and max values.
 	
 	Parameters
 	----------
@@ -110,9 +113,9 @@ def get_ndwi(b3: ndarray, b8: ndarray) -> ndarray:
 	"""
 	return (b3-b8)/(b3+b8)
 
-################################################################################
-# PLOTTING, HISTOGRAMS, ET CETERA
-################################################################################
+####################################################################################################
+# HISTOGRAMS, ET CETERA
+####################################################################################################
 def plot_ndwi(b3,b4,b8):
 	#NIR->R, R->G, G->B -- colour ir for plotting.
 	pass
@@ -154,280 +157,18 @@ def multip_hist(path: str, img: ndarray, title: str, subtitle: List[str], n_bins
 		axs[i].set_title(subtitle[i])
 	plt.savefig(path)
 
-#TODO
-def plot_label(path,dw_rdr,borders,windows):
-
-	pass
-
-
-def plot_label_multiclass(path,dw_rdr,borders):
-	DW_NAMES_10 = ['masked','water','trees','grass','flooded_vegetation',
-		'crops','shrub_and_scrub','built','bare','snow_and_ice'];
-
-	DW_PALETTE_10 = ['000000','419bdf','397d49','88b053','7a87c6','e49635', 
-	    'dfc35a','c4281b','a59b8f','b39fe1'];
-
-
-	# number of rows and cols takin' the boundaries into acct
-	h = borders['bottom'] + 1 - borders['top']
-	w = borders['right'] + 1 - borders['left']
-	read_window = Window(borders['left'],borders['top'],w,h)
-
-	#read, 1-band to 3-band, plot colors
-	dw = dw_rdr.read(1,window=read_window)
-	dw3 = np.stack([dw,np.zeros_like(dw),np.zeros_like(dw)],axis=0).astype(np.uint8)
-	for i in range(10):
-		# r,g,b = (int(DW_PALETTE_10[i][j:j+2],16) for j in range(0,6,2))
-		r_value = int(DW_PALETTE_10[i][0:2],16) #hex to int
-		g_value = int(DW_PALETTE_10[i][2:4],16)
-		b_value = int(DW_PALETTE_10[i][4:6],16)
-		dw3[:,dw==i] = [[r_value],[g_value],[b_value]]
-
-	# writer parameters
-	kwargs = dw_rdr.meta.copy()
-	kwargs.update({'height':read_window.height,'width':read_window.width,'count':3,
-		'compress':'lzw'})
-
-	#write to path
-	dst = rio.open(path,'w',**kwargs)
-	dst.write(dw3,indexes=[1,2,3])
-	dst.close()
-	return
-
-
-def plot_label_multiclass_windowed(path,dw_rdr,borders,windows):
-	DW_PALETTE_10 = ['000000','419bdf','397d49','88b053','7a87c6','e49635', 
-	    'dfc35a','c4281b','a59b8f','b39fe1'];
-
-	height = borders['bottom'] + 1 - borders['top']
-	width  = borders['right'] + 1 - borders['left']
-	height = height - (height % TILE_SIZE) + 1 #not sure if safe
-	width = width - (width % TILE_SIZE) + 1
-
-	kwargs = dw_rdr.meta.copy()
-	kwargs.update({'height':height,'width':width,'count':3,'compress':'lzw'})
-	dst = rio.open(path,'w',**kwargs)
-
-	for _,w in windows:
-
-		#fix array values first
-		arr1 = dw_rdr.read(1,window=w)
-		arr3 = np.stack([arr1,np.zeros_like(arr1),np.zeros_like(arr1)],axis=0)
-		for c in range(10):
-			r = int(DW_PALETTE_10[c][0:2],16)
-			g = int(DW_PALETTE_10[c][2:4],16)
-			b = int(DW_PALETTE_10[c][4:6],16)
-			arr3[:,arr1==c] = [[r],[g],[b]]
-
-		#write window in dst image
-		dst.write(arr3,window=w,indexes=[1,2,3])
-
-	dst.close()
-
-#TODO
-def plot_tci_windows(dst_path,bands,borders,windows):
-
-	#need to know size of output
-	height = borders['bottom'] - borders['top'] + 1
-	height -= (width % TILE_SIZE - 1)
-	width  = borders['right'] - borders['left'] + 1
-	width  -= (width % TILE_SIZE -1)
-
-	return True
-
-#TODO
-def plot_tci(path, bands, quant_val, offsets, borders):
-	"""
-	Writing is in the order B,G,R.
-
-	Parameters
-	----------
-	path: str
-		output file path
-	bands: [rio.DatasetReader]
-		List of dataset reader objects for the three bands
-	quant_val: int
-		The int to divide reflectance values by, given in xml metadata
-	offsets: [int]
-		Array of offsets for each band, most likely all 2000 or zero.
-	borders: dict
-
-	"""
-
-	#Full image minus non-labeled borders
-	nrows = borders['bottom'] + 1 - borders['top']
-	ncols = borders['right'] + 1 - borders['left']
-	w = Window(borders['left'],borders['top'],ncols,nrows)
-
-	#Stack bands
-	b,g,r = (_.read(1,window=w) for _ in bands)
-	tci = np.stack([r,g,b],axis=0)
-
-	#shift, norm and clip to [1,65535]
-	tci = (tci + np.array(offsets).reshape(3,1,1)) / quant_val * 65535
-	tci = np.clip(tci,1,65535)
-
-	mask_r = tci[0]==0
-	mask_g = tci[1]==0
-	mask_b = tci[2]==0
-
-	tci[0][mask_r] = 65535
-	tci[1][mask_g] = 65535
-	tci[2][mask_b] = 65535
-
-	kwargs = bands[0].meta.copy()
-	kwargs.update({'count':3,'driver':'GTiff','height':nrows,'width':ncols,
-		'dtype':'uint16','compress':'lzw','tiled':True,'blockxsize':TILE_SIZE,'blockysize':TILE_SIZE})
-	with rio.open(path,'w',photometric='RGB',**kwargs) as dst:
-		dst.write(tci,indexes=[1,2,3])
-	print("TCI written to %s" % path)
-
-	return True
-
-
-def plot_checkerboard(path,dw_rdr,borders,windows):
-	"""
-	Plot whole original label image with overlaying squares corresponding to
-	the blocks/windows used as selection for the chips.
-	"""
-	DW_PALETTE_10 = ['000000','419bdf','397d49','88b053','7a87c6','e49635', 
-	    'dfc35a','c4281b','a59b8f','b39fe1'];
-
-	water_threshold = 128*64
-
-	#Get lines -- red FF0000, yellow FFFF00
-	yellow_line      = np.ones((3,TILE_SIZE))
-	yellow_line[0:2] = 65535
-	yellow_line[2]   = 0
-	red_line         = np.ones((3,TILE_SIZE))
-	red_line[0]      = 65535
-	red_line[1:2]    = 0
-
-	#NEW SIZE OF 
-	height = borders['bottom'] - borders['top'] + 1
-	width  = borders['right'] - borders['left'] + 1
-
-	#WRITER
-	kwargs = dw_rdr.meta.copy()
-	kwargs.update({
-		'count':3,'compress':'lzw','height':height,'width':width,
-		'tiled':True,'blockxsize':256,'blockysize':256})
-	out_ptr = rio.open(path,'w',**kwargs)
-
-	correct_count = 0
-
-
-	#USE WINDOWS TO PLOT SQUARES
-	for _,w in windows:
-		arr = dw_rdr.read(1,window=w)
-		arr3 = np.stack([arr,np.zeros_like(arr),np.zeros_like(arr)],axis=0)
-		#plot label colors - hex to int
-		for c in range(10):
-			r = int(DW_PALETTE_10[c][0:2],16)
-			g = int(DW_PALETTE_10[c][2:4],16)
-			b = int(DW_PALETTE_10[c][4:6],16)
-			arr3[:,arr==c] = [[r],[g],[b]]	
-
-		#LINES
-		if (arr==0).sum() > 4:
-			arr3[:,0,:]  = red_line
-			arr3[:,-1,:] = red_line
-			arr3[:,:,0]  = red_line
-			arr3[:,:,-1] = red_line
-			arr3[:,1,:]  = red_line
-			arr3[:,-2,:] = red_line
-			arr3[:,:,1]  = red_line
-			arr3[:,:,-2] = red_line
-
-		else:
-			n_water = (arr==1).sum()
-			if n_water > water_threshold  and n_water < TILE_SIZE*TILE_SIZE-water_threshold:
-				arr3[:,0,:]  = yellow_line
-				arr3[:,-1,:] = yellow_line
-				arr3[:,:,0]  = yellow_line
-				arr3[:,:,-1] = yellow_line
-				arr3[:,1,:]  = yellow_line
-				arr3[:,-2,:] = yellow_line
-				arr3[:,:,1]  = yellow_line
-				arr3[:,:,-2] = yellow_line
-
-				correct_count += 1
-
-			else:
-				arr3[:,0,:]  = red_line
-				arr3[:,-1,:] = red_line
-				arr3[:,:,0]  = red_line
-				arr3[:,:,-1] = red_line
-				arr3[:,1,:]  = red_line
-				arr3[:,-2,:] = red_line
-				arr3[:,:,1]  = red_line
-				arr3[:,:,-2] = red_line
-
-		#WRITE
-		#adjust window:pos in reader (with borders) to pos in writer
-		w2 = Window(w.col_off-borders['left'],w.row_off-borders['top'],TILE_SIZE,TILE_SIZE)
-		out_ptr.write(arr3,window=w2,indexes=[1,2,3])
-
-	#PLOT REMAINING IMAGE BEYOND WINDOWS
-	block_rows = height // TILE_SIZE
-	block_cols = width // TILE_SIZE
-	remainder_rows = height % TILE_SIZE
-	remainder_cols = width % TILE_SIZE
-
-	#left edge in the bottom
-	reader_window = Window(
-		col_off=borders['left'],
-		row_off=borders['top']+block_rows*TILE_SIZE,
-		width=block_cols*TILE_SIZE,
-		height=remainder_rows) #reader,starts at border['top'],borders['left']
-
-	writer_window = Window(
-		col_off=0,
-		row_off=block_rows*TILE_SIZE,
-		width=block_cols*TILE_SIZE,
-		height=remainder_rows) #writer,starts at 0,0
-
-	arr = dw_rdr.read(1,window=reader_window)
-	arr3 = np.stack([arr,np.zeros_like(arr),np.zeros_like(arr)],axis=0)
-	for c in range(10):
-		r = int(DW_PALETTE_10[c][0:2],16)
-		g = int(DW_PALETTE_10[c][2:4],16)
-		b = int(DW_PALETTE_10[c][4:6],16)
-		arr3[:,arr==c] = [[r],[g],[b]]
-	out_ptr.write(arr3,window=writer_window,indexes=[1,2,3])
-
-	#leftover edge in the right
-	reader_window = Window(
-		col_off=borders['left']+block_cols*TILE_SIZE,
-		row_off=borders['top'],
-		width = remainder_cols,
-		height = height)
-
-	writer_window = Window(
-		col_off=block_cols*TILE_SIZE,
-		row_off=0,
-		width=remainder_cols,
-		height=height) #writer, starts at 0,0
-  
-	arr = dw_rdr.read(1,window=reader_window)
-	arr3 = np.stack([arr,np.zeros_like(arr),np.zeros_like(arr)],axis=0)
-	for c in range(10):
-		r = int(DW_PALETTE_10[c][0:2],16)
-		g = int(DW_PALETTE_10[c][2:4],16)
-		b = int(DW_PALETTE_10[c][4:6],16)
-		arr3[:,arr==c] = [[r],[g],[b]]
-	out_ptr.write(arr3,window=writer_window,indexes=[1,2,3])
-
-	print("Nr of good chips in raster: %i" % correct_count)
-
-	return
-
-#TODO
-def save_tci_window(path,bands,quant_val,offsets,window):
-	return
-################################################################################
+####################################################################################################
 # PROCESSING/FUNCTIONS
-################################################################################
+####################################################################################################
+def folder_check():
+	'''
+	Do a folder check to remove any folder with bands if that folder does not have a matching .tif
+	dynanmic world label.
+	'''
+	pass
+	return
+
+
 def parse_xml(path: str) -> Tuple[str, int, List[int]]:
 	"""
 	Get the datastrip id, band offset, and band quantification value from the
@@ -697,6 +438,208 @@ def upsample_mask(mask: ndarray) -> ndarray:
 	# return torch.nn.functional.upsample(t_mask,scale_factor=2,mode='nearest')
 	return np.repeat(np.repeat(mask,2,axis=0),2,axis=1)
 
+
+def plot_label_multiclass(path,dw_reader,borders):
+	"""
+	Plots the whole label raster with nodata borders removed.
+	"""
+	DW_NAMES_10 = ['masked','water','trees','grass','flooded_vegetation',
+		'crops','shrub_and_scrub','built','bare','snow_and_ice'];
+
+	DW_PALETTE_10 = ['000000','419bdf','397d49','88b053','7a87c6','e49635', 
+	    'dfc35a','c4281b','a59b8f','b39fe1'];
+
+
+	# number of rows and cols takin' the boundaries into acct
+	h = borders['bottom'] + 1 - borders['top']
+	w = borders['right'] + 1 - borders['left']
+	read_window = Window(borders['left'],borders['top'],w,h)
+
+	#read, 1-band to 3-band, plot colors
+	dw = dw_reader.read(1,window=read_window)
+	dw3 = np.stack([dw,np.zeros_like(dw),np.zeros_like(dw)],axis=0).astype(np.uint8)
+	for i in range(10):
+		r = int(DW_PALETTE_10[i][0:2],16) #hex to int
+		g = int(DW_PALETTE_10[i][2:4],16)
+		b = int(DW_PALETTE_10[i][4:6],16)
+		dw3[:,dw==i] = [[r],[g],[b]]
+
+	# writer parameters
+	kwargs = dw_reader.meta.copy()
+	kwargs.update({'height':read_window.height,'width':read_window.width,'count':3,
+		'compress':'lzw'})
+
+	#write to path
+	dst = rio.open(path,'w',**kwargs)
+	dst.write(dw3,indexes=[1,2,3])
+	dst.close()
+
+
+def plot_label_multiclass_windowed(path,dw_reader,borders,windows):
+	'''
+	Plots the whole label raster using windows. Data beyond the windows is not plotted.
+	'''
+	DW_PALETTE_10 = ['000000','419bdf','397d49','88b053','7a87c6','e49635', 
+	    'dfc35a','c4281b','a59b8f','b39fe1'];
+
+	#height
+	height = borders['bottom'] + 1 - borders['top']
+	width  = borders['right'] + 1 - borders['left']
+	height = height - (height % TILE_SIZE) + 1 #not sure if safe
+	width = width - (width % TILE_SIZE) + 1
+
+	#writer config
+	kwargs = dw_reader.meta.copy()
+	kwargs.update({'height':height,'width':width,'count':3,'compress':'lzw'})
+	dst = rio.open(path,'w',**kwargs)
+
+	for _,w in windows:
+
+		# change array values -- single to 3-band 10-class
+		arr1 = dw_reader.read(1,window=w)
+		arr3 = np.stack([arr1,np.zeros_like(arr1),np.zeros_like(arr1)],axis=0)
+		for c in range(10):
+			r = int(DW_PALETTE_10[c][0:2],16)
+			g = int(DW_PALETTE_10[c][2:4],16)
+			b = int(DW_PALETTE_10[c][4:6],16)
+			arr3[:,arr1==c] = [[r],[g],[b]]
+
+		#write window in dst image
+		dst.write(arr3,window=w,indexes=[1,2,3])
+
+	dst.close()
+
+
+def plot_checkerboard(path,dw_reader,borders,windows):
+	"""
+	Plots whole label raster with overlaying squares corresponding to
+	the blocks/windows used as chips.
+	"""
+	DW_PALETTE_10 = ['000000','419bdf','397d49','88b053','7a87c6','e49635', 
+	    'dfc35a','c4281b','a59b8f','b39fe1'];
+
+	#Get lines -- red FF0000, yellow FFFF00
+	yellow_line      = np.ones((3,TILE_SIZE))
+	yellow_line[0:2] = 65535
+	yellow_line[2]   = 0
+	red_line         = np.ones((3,TILE_SIZE))
+	red_line[0]      = 65535
+	red_line[1:2]    = 0
+
+	#NEW SIZE OF 
+	height = borders['bottom'] - borders['top'] + 1
+	width  = borders['right'] - borders['left'] + 1
+
+	#WRITER
+	kwargs = dw_reader.meta.copy()
+	kwargs.update({
+		'count':3,'compress':'lzw','height':height,'width':width,
+		'tiled':True,'blockxsize':256,'blockysize':256})
+	out_ptr = rio.open(path,'w',**kwargs)
+
+	correct_count = 0
+
+	#FOR EACH WINDOW PLOT SQUARES
+	for _,w in windows:
+		# single to 3-band 10-class
+		arr = dw_reader.read(1,window=w)
+		arr3 = np.stack([arr,np.zeros_like(arr),np.zeros_like(arr)],axis=0)
+		#plot label colors - hex to int
+		for c in range(10):
+			r = int(DW_PALETTE_10[c][0:2],16)
+			g = int(DW_PALETTE_10[c][2:4],16)
+			b = int(DW_PALETTE_10[c][4:6],16)
+			arr3[:,arr==c] = [[r],[g],[b]]	
+
+		#LINES
+		if (arr==0).sum() > 4:
+			for i in range(3):
+				arr3[:,i,:]      = red_line #top
+				arr3[:,-(i+1),:] = red_line #bottom
+				arr3[:,:,i]      = red_line #left
+				arr3[:,:,-(i+1)] = red_line #right
+
+		else:			
+			n_water = (arr==1).sum()
+
+			if n_water > WATER_MIN  and n_water < WATER_MAX:
+				for i in range(3):
+					arr3[:,i,:]      = yellow_line #top
+					arr3[:,-(i+1),:] = yellow_line #bottom
+					arr3[:,:,i]      = yellow_line #left
+					arr3[:,:,-(i+1)] = yellow_line #right
+				correct_count += 1
+
+			else:
+				for i in range(3):
+					arr3[:,i,:]      = red_line #top
+					arr3[:,-(i+1),:] = red_line #bottom
+					arr3[:,:,i]      = red_line #left
+					arr3[:,:,-(i+1)] = red_line #right
+
+		#adjust window:pos in reader to pos in writer
+		w2 = Window(w.col_off-borders['left'],w.row_off-borders['top'],TILE_SIZE,TILE_SIZE)
+		
+		#WRITE
+		out_ptr.write(arr3,window=w2,indexes=[1,2,3])
+
+	print("Nr of good chips in raster: %i" % correct_count)
+
+	#PLOT REMAINING IMAGE BEYOND WINDOWS
+	block_rows     = height // TILE_SIZE
+	block_cols     = width // TILE_SIZE
+	remainder_rows = height % TILE_SIZE
+	remainder_cols = width % TILE_SIZE
+
+	#bottom edge
+	reader_window = Window(
+		col_off=borders['left'],
+		row_off=borders['top']+block_rows*TILE_SIZE,
+		width=block_cols*TILE_SIZE,
+		height=remainder_rows) #reader,starts at border['top'],borders['left']
+
+	writer_window = Window(
+		col_off=0,
+		row_off=block_rows*TILE_SIZE,
+		width=block_cols*TILE_SIZE,
+		height=remainder_rows) #writer,starts at 0,0
+
+	arr = dw_reader.read(1,window=reader_window)
+	arr3 = np.stack([arr,np.zeros_like(arr),np.zeros_like(arr)],axis=0)
+	for c in range(10):
+		r = int(DW_PALETTE_10[c][0:2],16)
+		g = int(DW_PALETTE_10[c][2:4],16)
+		b = int(DW_PALETTE_10[c][4:6],16)
+		arr3[:,arr==c] = [[r],[g],[b]]
+	out_ptr.write(arr3,window=writer_window,indexes=[1,2,3])
+
+	#right edge
+	reader_window = Window(
+		col_off=borders['left']+block_cols*TILE_SIZE,
+		row_off=borders['top'],
+		width = remainder_cols,
+		height = height)
+
+	writer_window = Window(
+		col_off=block_cols*TILE_SIZE,
+		row_off=0,
+		width=remainder_cols,
+		height=height) #writer, starts at 0,0
+  
+	arr = dw_reader.read(1,window=reader_window)
+	arr3 = np.stack([arr,np.zeros_like(arr),np.zeros_like(arr)],axis=0)
+	for c in range(10):
+		r = int(DW_PALETTE_10[c][0:2],16)
+		g = int(DW_PALETTE_10[c][2:4],16)
+		b = int(DW_PALETTE_10[c][4:6],16)
+		arr3[:,arr==c] = [[r],[g],[b]]
+	out_ptr.write(arr3,window=writer_window,indexes=[1,2,3])
+	
+
+#TODO
+def plot_label_singleclass_windowed():
+	pass
+
 #TODO
 def chip_image_cpu(img: ndarray, windows: List[Tuple]) -> ndarray:
 	"""
@@ -721,15 +664,15 @@ def chip_image_gpu(img: ndarray, chp_size: int=256) -> ndarray:
 	pass
 
 #TODO
-def adjust_label(window: ndarray):
+def adjust_label(win_arr: ndarray):
 	"""
-	Label 1 is water, remove unnecessary labels equate to one, set rest to zero, nonvals(?),etc.
+	Label 1 is water, remove unnecessary labels, equate to one, set rest to zero, nonvals(?),etc.
 	"""
 	window == 1
 	pass
 
 #TODO
-def adjust_band():
+def adjust_band(win_arr: ndarray):
 	"""
 	Do the shift by offset band values and divide by the quantification value,
 	clip values if needed
@@ -742,16 +685,18 @@ def check_label_window(arr: ndarray):
 	This checks if there's both water and land in the array.
 	"""
 	no_data_mask = arr==0
-	if (no_data_mask).sum() > 4: #if no data > 4 px
+	if no_data_mask.sum() > 4: #if no data
 		#red
-		return False
-	else:
+		return -1
+	else:			
 		n_water = (arr==1).sum()
-		if n_water > water_threshold  and n_water < TILE_SIZE*TILE_SIZE-water_threshold:
+		if n_water > WATER_MIN and n_water < WATER_MAX:
 			pass
 			#yellow line
 
 			correct_count += 1
+
+
 		else:
 			#red line
 			pass
@@ -765,25 +710,23 @@ def check_band_window(arr: ndarray):
 		return False
 	return True
 
-#TODO ?
-def check_scl(src,window):
-	"""
-	Check the upsampled SCL file for category 1, no data and use as no data mask.
-	"""
-	scl_img = src.read(1,window=window)
-	if (scl_img==0).sum() > 0:
-		return False
-	return True
-
 #TODO
 def process_window(w: Window, ):
 	pass
 
 #TODO
 def process_product(id: str):
-	#1.ID -> BAND PATHS, XML
+	#1.ID -> BAND PATHS, XML PATH
+	band_filename = get_band_filenames(id,['B02','B03','B04','B08'])
+	band_paths = [DATA_DIR+id+'/'+_  for _ in band_filename]
+
+	xml_filename = [f for f in os.listdir(DATA_DIR + id) if f[-4:]=='.xml'][0] #bc MTD, MTD_L2A
+	xml_path = DATA_DIR + '/'.join([id,xml_filename])
 
 	#2.XML -> DW PATH, OFFSETS, QUANTIFICATION VALUE
+	datastrip,quant_val,offsets = parse_xml(xml_path)
+	gee_id = get_gee_id(id,datastrip)
+	dw_path = DATA_DIR + '/'.join([LABEL_DIR,gee_id]) + '.tif'
 
 	#3.BAND PATHS, DW PATH -> DatasetReader x 5
 
@@ -797,10 +740,102 @@ def process_product(id: str):
 
 	pass
 
+#TODO
+def plot_tci_windowed(dst_path,bands,borders,windows):
 
-################################################################################
+	#need to know size of output
+	px_rows = borders['bottom'] - borders['top'] + 1
+	height -= (width % TILE_SIZE - 1)
+	px_cols  = borders['right'] - borders['left'] + 1
+	width  -= (width % TILE_SIZE -1)
+
+	return True
+
+#TODO
+def check_tci(path, bands, quant, offsets, borders):
+	"""
+	Plot whole rgb image with the nodata borders removed.
+
+	Parameters
+	----------
+
+		output file path
+	bands: [rio.DatasetReader]
+		List of dataset reader objects for the three bands
+	quant_val: int
+		The int to divide reflectance values by, given in xml metadata
+	offsets: [int]
+		Array of radiometric offsets for each band, most likely all -1000.
+	borders: dict
+
+	"""
+
+	#Full image minus no-data borders
+	px_rows = borders['bottom'] + 1 - borders['top']
+	px_cols = borders['right'] + 1 - borders['left']
+	w = Window(borders['left'],borders['top'],px_cols,px_rows)
+
+	#Stack bands
+	b,g,r = (_.read(1,window=w) for _ in bands)
+	tci   = np.stack([r,g,b],axis=0)
+
+	zero_mask = tci==0
+	and_zeromask = zero_mask[0]*zero_mask[1]*zero_mask[2]
+	or_zeromask = zero_mask[0]+zero_mask[1]+zero_mask[2]
+
+	#clip and shift
+	if sum(offsets) > 0:
+		tci_clipped = np.clip(tci,1001,11000) #[1001,11000]
+		tci_clipped = (tci_clipped + np.array(offsets).reshape(3,1,1)) #[1,10000]
+	else:
+		tci_clipped = np.clip(tci,1,10000)
+
+	tci_clipped = tci_clipped/quant #[0.0,1.0]
+	tci_clipped = (tci_clipped * (255)).astype(np.uint8)
+
+	tci_by_band = tci_clipped.copy()
+	tci_by_band[zero_mask] = 255
+
+	kwargs = bands[0].meta.copy()
+	kwargs.update({'count':3,'driver':'JP2OpenJPEG','height':px_rows,'width':px_cols,
+		'dtype':'uint8','compress':'lzw','TILED':True,'blockxsize':1024,'blockysize':1024,'codec':'J2K'})
+
+	start = time.perf_counter()
+	with rio.open('ALL_'+path,'w',**kwargs) as dst:
+		dst.write(tci_by_band,indexes=[1,2,3])
+	stop  = time.perf_counter()
+	print("TCI written to %s" % 'ALL_'+path)
+	print("Time to plot tci: %.5f" % (stop-start))
+	os.remove('ALL_'+path+'.aux.xml')
+
+	start = time.perf_counter()
+	tci_and = tci_clipped.copy()
+	tci_and[1,and_zeromask] = 255
+	with rio.open('AND_'+path,'w',photometric='RGB',**kwargs) as dst:
+		dst.write(tci_and,indexes=[1,2,3])
+	stop  = time.perf_counter()		
+	print("TCI written to %s" % 'AND_'+path)
+	print("Time to plot tci: %.5f" % (stop-start))	
+	os.remove('AND_'+path+'.aux.xml')
+
+	start = time.perf_counter()
+	tci_or = tci_clipped.copy()
+	tci_or[1,or_zeromask] = 255
+	with rio.open('OR_'+path,'w',photometric='RGB',**kwargs) as dst:
+		dst.write(tci_or,indexes=[1,2,3])
+	stop  = time.perf_counter()		
+	print("TCI written to %s" % 'OR_'+path)
+	print("Time to plot tci: %.5f" % (stop-start))	
+	os.remove('OR_'+path+'.aux.xml')
+
+	return True
+
+#TODO
+def save_tci_window(path,bands,quant_val,offsets,window):
+	return
+####################################################################################################
 # MAIN
-################################################################################
+####################################################################################################
 
 if __name__ == '__main__':
 
@@ -808,7 +843,7 @@ if __name__ == '__main__':
 	folders  = [d for d in os.listdir(DATA_DIR) if d[-5:]=='.SAFE']
 	
 	#A SINGLE FOLDER
-	safe_dir = folders[0]
+	safe_dir = folders[2]
 
 	#PARSE XML INFO
 	xml_file = [f for f in os.listdir(DATA_DIR + safe_dir) if f[-4:]=='.xml'][0] #bc MTD, MTD_L2A
@@ -835,30 +870,6 @@ if __name__ == '__main__':
 	input_windows = get_windows(input_borders)
 	label_windows = get_windows(label_borders)
 
-	print(safe_dir)
-
-	plot_tci(safe_dir[:-5]+'_tci.tif',[band2,band3,band4],quant_val,offsets[0:3],input_borders)
-	plot_checkerboard('test_checkerboard.tif',label,label_borders,label_windows)
-
-	# save_tci_full('./test_tci.tif',[band2,band3,band4],quant_val,offset_vals[0:3])
-	# print_checkerboard(safe_dir,input_windows,quant_val,offset_vals)
-
-	# k  = 854
-
-	# #PLOT FUNCTION CHECK...
-	# s_time = time.time()
-	# plot_label_multiclass('plot_test_1.tif',label,label_borders,window=None)
-	# e_time = time.time()
-	# print('TIME: %.5f'% ((e_time-s_time)/1000)) 
-
-	# s_time = time.time()
-	# plot_label_multiclass_windows('plot_test_2.tif',label,label_borders,label_windows)
-	# e_time = time.time()
-	# print('TIME: %.5f'% ((e_time-s_time)/1000))
-
-	# #Some lost notes...
-	# b02 = b02.squeeze(axis=0)
-	# bgr = np.moveaxis(np.stack((b02,b03,b04)),0,-1)
-	# cv.imwrite('bgr_eq.png',bgr)
-	# # RIGHT SHIFT -- np.right_shift() bitwise
-	#RGB COMPOSITE--np.concatenate([b04,b03,b02],axis=0)
+	# print(safe_dir)
+	check_tci(gee_id+'_tci.jp2',[band2,band3,band4],quant_val,offsets[0:3],input_borders)
+	# plot_checkerboard(gee_id+'_chk.tif',label,label_borders,label_windows)
