@@ -25,12 +25,16 @@ ns = {
 	}
 
 plt.style.use('fast')
-DATA_DIR  = './dat/'  #<---- change this to argparse? maybe env
-CHIP_DIR  = DATA_DIR + 'chp/'
+
 LABEL_DIR = 'dynamicworld'
 TILE_SIZE = 256
 WATER_MIN = 128*64
 WATER_MAX = TILE_SIZE*TILE_SIZE - WATER_MIN
+
+DATA_DIR = os.getenv('DATA_DIR')
+if DATA_DIR is None:
+	DATA_DIR = './dat'
+CHIP_DIR  = DATA_DIR + '/chp'
 
 ####################################################################################################
 # BAND ARITHMETIC
@@ -161,7 +165,7 @@ def parse_xml(path: str) -> Tuple[str, int, List[int]]:
 				<Granule_List>
 					<Granule datastripIdentifier="" granuleIdentifier="">
 
-	Hence, we parse with
+	Hence, the datastrip is parsed with
 
 	root.find('n1:General_Info',ns)
 		.find('Product_Info')
@@ -171,7 +175,7 @@ def parse_xml(path: str) -> Tuple[str, int, List[int]]:
 
 
 	The structure of the the band quantification values inside the XML file 
-	looks something like this
+	looks like this
 
 	<Product_Image_Characteristics>
 		<QUANTIFICATION_VALUES LIST>
@@ -179,7 +183,15 @@ def parse_xml(path: str) -> Tuple[str, int, List[int]]:
 		<Reflectance_Conversion>
 		...
 
-	The offsets look like this
+	Hence it is parsed with
+
+	root.find('n1:General_Info',namespaces=ns)
+		.find('Product_Image_Characteristics')
+			.find('QUANTIFICATION_VALUES_LIST')
+				.find('BOA_QUANTIFICATION_VALUE')
+
+
+	And, the offsets look like this
 
 	<Product_Image_Characteristics>
 		<QUANTIFICATION_VALUES LIST>
@@ -193,7 +205,11 @@ def parse_xml(path: str) -> Tuple[str, int, List[int]]:
 		<Reflectance_Conversion>
 		...
 
+	And so they are parsed, by iterating on the result of
 
+	root.find('n1:General_Info',namespaces=ns)
+		.find('Product_Image_Characteristics')
+			.find('BOA_ADD_OFFSET_VALUES_LIST')			
 
 	'''
 
@@ -222,22 +238,22 @@ def parse_xml(path: str) -> Tuple[str, int, List[int]]:
 	return datastrip,quant_val,offsets
 
 
-def get_gee_id(s2_img_id: str, datastrip: str) -> str:
+def get_gee_id(s2_id: str, datastrip: str) -> str:
 	'''
 	Read a Sentinel-2 id string, and return the DynamicWorld id.
 	'''
-	date,tile = s2_img_id.split('_')[2:6:3]
+	date,tile = s2_id.split('_')[2:6:3]
 	gee_id = '_'.join([date,datastrip,tile])
 	return gee_id
 
 
-def get_band_filename(s2_img_id: str, band: str) -> str:
+def get_band_filename(s2_ id: str, band: str) -> str:
 	'''
 	Given a Sentinel-2 product name and band, return the band image file name.
 	'''
-	date = s2_img_id[11:26]
-	tile = s2_img_id[38:44]
-	return '_'.join([tile, date, band, '10m.jp2'])
+	# date = s2_id[11:26]
+	# tile = s2_id[38:44]
+	return '_'.join([s2_id[38:44],s2_id[11:26],band,'10m.jp2'])
 
 
 def get_band_filenames(s2_img_id: str, bands: [str]) -> [str]:
@@ -247,7 +263,7 @@ def get_band_filenames(s2_img_id: str, bands: [str]) -> [str]:
 	return list(map(get_band_filename,[s2_img_id]*len(bands),bands))
 
 
-def remove_borders_as_array(dw_array):
+def remove_borders_as_array(dw_array: ndarray) -> ndarray:
 	'''
 	Take the ndarray of a dynamic world image as input and return a copy without its zero-valued 
 	borders, and a dictionary with the indices of the first and last row and first and last column 
@@ -272,9 +288,21 @@ def remove_borders_as_array(dw_array):
 
 def remove_borders(src):
 	'''
-	Take a rasterio reader object for a dynamicworld image and get the indices 
-	of the first non-zero values counting from the top, bottom, left, and 
-	right.
+	Take a rasterio DatasetReader for a dynamicworld image and get the indices 
+	where non-zeros begin at the top, bottom, left, and right.
+
+	Parameters
+	----------
+	src: rasterio.DatasetReader
+		Dataset reader for a dynamic world array (which has zeroes where S2
+		still has data, so checking S2 is redundant).
+
+	Returns
+	-------
+	dict
+		dictionary with indices of first non-zero values at top, left, right, 
+		bottom
+
 	'''
 	top,bottom,left,right = 0,src.height-1,0,src.width-1
 
@@ -311,6 +339,12 @@ def remove_borders(src):
 
 def convert_bounds(dw,s2,dw_ij_dict):
 	"""
+	Takes DatasetReader objects for S2 and DynamicWorld images and returns a 
+	dictionary for the row/col indices of the sentinel image where the non-zero
+	data of the DynamicWorld image are.
+
+	Parameters
+	----------
 	dw: rasterio.io.DatasetReader
 		The reader for the DynamicWorld label
 	s2: rasterio.io.DatasetReader
@@ -319,6 +353,11 @@ def convert_bounds(dw,s2,dw_ij_dict):
 		A dictionary of four numbers, each corresponding to the first and last 
 		indices in both directions of the image containing data (without no
 		data, or zeroes).
+
+	Returns
+	-------
+	dict
+
 	"""
 	# s2 indexes:
 	# (18, 3391) (10959, 3391) (10959, 10958) (18, 10958) before
@@ -612,8 +651,9 @@ def clip_tails(img: ndarray, bottom: int=1, top: int=99) -> ndarray:
 	img: numpy.ndarray	
 		The raster image.
 	bottom: int
-		Bottom amount to be removed
+		Bottom amount to be removed in percentage
 	top: int
+		Top amount to be removed in percentage.9
 
 	Returns
 	-------
@@ -632,13 +672,22 @@ def clip_tails(img: ndarray, bottom: int=1, top: int=99) -> ndarray:
 		print("In clip_tail():")
 		raise AssertionError from e
 
+ 	return np.clip(img, bottom*0.01*img.min(), top*0.01*img.max())
+
 #TODO
-def folder_check(data_dir):
+def folder_check():
 	'''
 	Do a folder check to remove any folder with bands if that folder does not have a matching .tif
 	dynanmic world label.
 	'''
+	for folder in os.listdir(DATA_DIR):
+		if folder != 'dynamicworld':
 
+			# get xml
+			xml_name = [f for f in os.listdir(DATA_DIR + id) if f[-4:]=='.xml'][0] #bc MTD, MTD_L2A
+			xml_path = DATA_DIR + '/'.join([id,xml_filename])	
+
+			# 
 	pass
 	return
 
@@ -734,8 +783,14 @@ def process_product(id: str):
 	dw_path = DATA_DIR + '/'.join([LABEL_DIR,gee_id]) + '.tif'
 
 	#3.BAND PATHS, DW PATH -> DatasetReader x 5
+	label = rio.open(label_path,'r',tiled=True,blockxsize=TILE_SIZE,blockysize=TILE_SIZE)
+	band2 = rio.open(band_paths[0],'r',tiled=True,blockxsize=TILE_SIZE,blockysize=TILE_SIZE)
+	band3 = rio.open(band_paths[1],'r',tiled=True,blockxsize=TILE_SIZE,blockysize=TILE_SIZE)
+	band4 = rio.open(band_paths[2],'r',tiled=True,blockxsize=TILE_SIZE,blockysize=TILE_SIZE)
+	band8 = rio.open(band_paths[3],'r',tiled=True,blockxsize=TILE_SIZE,blockysize=TILE_SIZE)
 
 	#4.DW READER -> BOUNDARIES DW
+
 
 	#5.BOUNDARIES DW, BAND READER x 4 -> BOUNDARIES S2
 
@@ -869,6 +924,6 @@ if __name__ == '__main__':
 	input_windows = get_windows(input_borders)
 	label_windows = get_windows(label_borders)
 
-	# print(safe_dir)
+	print(safe_dir)
 	plot_tci('./fig/'+gee_id+'_TCI.jp2',[band2,band3,band4],quant_val,offsets[0:3],input_borders)
 	# plot_checkerboard(gee_id+'_chk.tif',label,label_borders,label_windows)
