@@ -35,35 +35,6 @@ WATER_MAX = TILE_SIZE*TILE_SIZE - WATER_MIN
 ####################################################################################################
 # BAND ARITHMETIC
 ####################################################################################################
-def clip_tails(img: ndarray, bottom: int=1, top: int=99) -> ndarray:
-	"""
-	Remove the values below the 'bottom' and  above 'top' percent in an image.
-
-	Parameters
-	----------
-	img: numpy.ndarray	
-		The raster image.
-	bottom: int
-		Bottom amount to be removed
-	top: int
-
-	Returns
-	-------
-	result: numpy.ndarray
-	"""
-
-	#input check
-	try:
-		assert bottom < 100 and bottom >= 0, \
-			"'bottom' must be between 0 and 99 inclusive."
-		assert top <= 100 and top > 0, \
-			"Int 'top' must be between 1 and 100 inclusive."
-		assert top > bottom, \
-			"Upper boundary 'top' must be greater than 'bottom'."
-	except AssertionError as e:
-		print("In clip_tail():")
-		raise AssertionError from e
-
 
 def minmax_normalize(img: ndarray, by_band: bool=True) -> ndarray:
 	"""
@@ -99,7 +70,7 @@ def get_ndwi(b3: ndarray, b8: ndarray) -> ndarray:
 	"""
 	Parameters
 	----------
-	b3 : ndarray
+	b3: ndarray
 		Green band.
 
 	b8: ndarray
@@ -140,37 +111,27 @@ def plot_img(path: str, img: ndarray, lib: str='opencv') -> None:
 		print("Please specify a library for plot_img().")
 
 
-def single_hist(path: str, band: ndarray, title: str, n_bins: int) -> None:
+def band_hist(path: str, band: ndarray, title: str, n_bins: int) -> None:
 	fig,ax = plt.subplots()
 	ax.set_title(title)
 	ax.hist(band.flatten(),bins=n_bins)
-	pass
 	plt.savefig(path)
 
 
-def multip_hist(path: str, img: ndarray, title: str, subtitle: List[str], n_bins: int) -> None:
-	fig, axs = plt.subplots(nrows=1,ncols=bands.shape[0],sharey=True,tight_layout=True)
-	fig.suptitle(title)
+def multiband_hist(path: str, img: ndarray, title: str, subtitle: List[str], n_bins: int) -> None:
 	colors = ['r','g','b','darkred']
+	fig, ax = plt.subplots(nrows=1,ncols=bands.shape[0],sharey=True,tight_layout=True)
+	fig.suptitle(title)
 	for i in range(img.shape[0]):
-		axs[i].hist(img[i].flatten(),bins=n_bins)
-		axs[i].set_title(subtitle[i])
+		ax[i].hist(img[i].flatten(),bins=n_bins)
+		ax[i].set_title(subtitle[i])
 	plt.savefig(path)
 
 ####################################################################################################
-# PROCESSING/FUNCTIONS
+# PROCESSING STUFF
 ####################################################################################################
-def folder_check():
-	'''
-	Do a folder check to remove any folder with bands if that folder does not have a matching .tif
-	dynanmic world label.
-	'''
-	pass
-	return
-
-
 def parse_xml(path: str) -> Tuple[str, int, List[int]]:
-	"""
+	'''
 	Get the datastrip id, band offset, and band quantification value from the
 	xml metadata file found in path.
 
@@ -208,25 +169,17 @@ def parse_xml(path: str) -> Tuple[str, int, List[int]]:
 				.find('Granule_List')
 					.find('Granule').attrib['datastripIdentifier']
 
-	"""
 
-	#fail if wrong path
-	assert os.path.isfile(path), "No file found in path %s" % path
+	The structure of the the band quantification values inside the XML file 
+	looks something like this
 
-	root      = ET.parse(path).getroot()
-	prod_info = root.find('n1:General_Info',namespaces=ns).find('Product_Info')
-	granule   = prod_info.find('Product_Organisation').find('Granule_List').find('Granule')
-	# granule   = [e for e in prod_info.iter('Granule')][0]
-	datastrip = granule.attrib['datastripIdentifier'].split('_')[-2][1:]
-	
-
-	### ADD BAND OFFSET CHECK AND RETURN IF EXISTS !!!
-	'''
 	<Product_Image_Characteristics>
 		<QUANTIFICATION_VALUES LIST>
 			<BOA_QUANTIFICATION_VALUE>
 		<Reflectance_Conversion>
-		....
+		...
+
+	The offsets look like this
 
 	<Product_Image_Characteristics>
 		<QUANTIFICATION_VALUES LIST>
@@ -238,14 +191,28 @@ def parse_xml(path: str) -> Tuple[str, int, List[int]]:
 			...
 			<BOA_ADD_OFFSET band_id="12">-1000</BOA_ADD_OFFSET>			
 		<Reflectance_Conversion>
-		....
+		...
 
-	something like:
+
+
 	'''
+
+	# fail if wrong path
+	assert os.path.isfile(path), "No file found in path %s" % path
+
+	# get datastrip
+	root      = ET.parse(path).getroot()
+	prod_info = root.find('n1:General_Info',namespaces=ns).find('Product_Info')
+	granule   = prod_info.find('Product_Organisation').find('Granule_List').find('Granule')
+	# granule   = [e for e in prod_info.iter('Granule')][0]
+	datastrip = granule.attrib['datastripIdentifier'].split('_')[-2][1:]
+
+	# quantification values
 	prod_char = root.find('n1:General_Info',namespaces=ns).find('Product_Image_Characteristics')
 	boa_quant = prod_char.find('QUANTIFICATION_VALUES_LIST').find('BOA_QUANTIFICATION_VALUE')
 	quant_val = int(boa_quant.text)
 
+	# offset values
 	boa_add = prod_char.find('BOA_ADD_OFFSET_VALUES_LIST') #None | Element 
 	if boa_add is not None:
 		offsets = [int(e.text) for e in boa_add[1:4]] + [int(boa_add[7].text)]
@@ -257,7 +224,7 @@ def parse_xml(path: str) -> Tuple[str, int, List[int]]:
 
 def get_gee_id(s2_img_id: str, datastrip: str) -> str:
 	'''
-	Read a Sentinel-2 image id string and returns the respective DynamicWorld product id.
+	Read a Sentinel-2 id string, and return the DynamicWorld id.
 	'''
 	date,tile = s2_img_id.split('_')[2:6:3]
 	gee_id = '_'.join([date,datastrip,tile])
@@ -635,6 +602,45 @@ def plot_checkerboard(path,dw_reader,borders,windows):
 		arr3[:,arr==c] = [[r],[g],[b]]
 	out_ptr.write(arr3,window=writer_window,indexes=[1,2,3])
 	
+#TODO
+def clip_tails(img: ndarray, bottom: int=1, top: int=99) -> ndarray:
+	"""
+	Remove the values below the 'bottom' and  above 'top' percent in an image.
+
+	Parameters
+	----------
+	img: numpy.ndarray	
+		The raster image.
+	bottom: int
+		Bottom amount to be removed
+	top: int
+
+	Returns
+	-------
+	result: numpy.ndarray
+	"""
+
+	#input check
+	try:
+		assert bottom < 100 and bottom >= 0, \
+			"'bottom' must be between 0 and 99 inclusive."
+		assert top <= 100 and top > 0, \
+			"Int 'top' must be between 1 and 100 inclusive."
+		assert top > bottom, \
+			"Upper boundary 'top' must be greater than 'bottom'."
+	except AssertionError as e:
+		print("In clip_tail():")
+		raise AssertionError from e
+
+#TODO
+def folder_check(data_dir):
+	'''
+	Do a folder check to remove any folder with bands if that folder does not have a matching .tif
+	dynanmic world label.
+	'''
+
+	pass
+	return
 
 #TODO
 def plot_label_singleclass_windowed():
@@ -701,7 +707,6 @@ def check_label_window(arr: ndarray):
 			#red line
 			pass
 
-
 	return True
 
 #TODO
@@ -718,14 +723,14 @@ def process_window(w: Window, ):
 def process_product(id: str):
 	#1.ID -> BAND PATHS, XML PATH
 	band_filename = get_band_filenames(id,['B02','B03','B04','B08'])
-	band_paths = [DATA_DIR+id+'/'+_  for _ in band_filename]
+	band_paths    = [DATA_DIR+id+'/'+_  for _ in band_filename]
 
 	xml_filename = [f for f in os.listdir(DATA_DIR + id) if f[-4:]=='.xml'][0] #bc MTD, MTD_L2A
-	xml_path = DATA_DIR + '/'.join([id,xml_filename])
+	xml_path     = DATA_DIR + '/'.join([id,xml_filename])
 
 	#2.XML -> DW PATH, OFFSETS, QUANTIFICATION VALUE
-	datastrip,quant_val,offsets = parse_xml(xml_path)
-	gee_id = get_gee_id(id,datastrip)
+	datastrip, quantnr, offsets = parse_xml(xml_path)
+	gee_id  = get_gee_id(id,datastrip)
 	dw_path = DATA_DIR + '/'.join([LABEL_DIR,gee_id]) + '.tif'
 
 	#3.BAND PATHS, DW PATH -> DatasetReader x 5
@@ -745,29 +750,18 @@ def plot_tci_windowed(dst_path,bands,borders,windows):
 
 	#need to know size of output
 	px_rows = borders['bottom'] - borders['top'] + 1
-	height -= (width % TILE_SIZE - 1)
-	px_cols  = borders['right'] - borders['left'] + 1
-	width  -= (width % TILE_SIZE -1)
+	px_cols = borders['right'] - borders['left'] + 1
+	px_rows_blocks = px_rows - (px_rows % TILE_SIZE - 1)
+	px_cols_blocks = px_cols - (px_cols % TILE_SIZE -1)
+
+
 
 	return True
 
 #TODO
-def check_tci(path, bands, quant, offsets, borders):
+def plot_tci(path:str, bands:[rio.DatasetReader], quant:int, offsets:[int], borders: dict):
 	"""
 	Plot whole rgb image with the nodata borders removed.
-
-	Parameters
-	----------
-
-		output file path
-	bands: [rio.DatasetReader]
-		List of dataset reader objects for the three bands
-	quant_val: int
-		The int to divide reflectance values by, given in xml metadata
-	offsets: [int]
-		Array of radiometric offsets for each band, most likely all -1000.
-	borders: dict
-
 	"""
 
 	#Full image minus no-data borders
@@ -779,56 +773,61 @@ def check_tci(path, bands, quant, offsets, borders):
 	b,g,r = (_.read(1,window=w) for _ in bands)
 	tci   = np.stack([r,g,b],axis=0)
 
-	zero_mask = tci==0
-	and_zeromask = zero_mask[0]*zero_mask[1]*zero_mask[2]
-	or_zeromask = zero_mask[0]+zero_mask[1]+zero_mask[2]
+	#nodata
+	rgb_zeromask = tci==0
+	and_zeromask = rgb_zeromask.all(axis=0) #and axis 0
 
 	#clip and shift
 	if sum(offsets) > 0:
-		tci_clipped = np.clip(tci,1001,11000) #[1001,11000]
-		tci_clipped = (tci_clipped + np.array(offsets).reshape(3,1,1)) #[1,10000]
+		tci = np.clip(tci,1001,11000) #[1001,11000]
+		tci = (tci + np.array(offsets).reshape(3,1,1)) #[1,10000]
 	else:
-		tci_clipped = np.clip(tci,1,10000)
+		tci = np.clip(tci,1,10000)
 
-	tci_clipped = tci_clipped/quant #[0.0,1.0]
-	tci_clipped = (tci_clipped * (255)).astype(np.uint8)
-
-	tci_by_band = tci_clipped.copy()
-	tci_by_band[zero_mask] = 255
+	#Normalize to [0.0, 1.0] with 10000, mult by bit factor
+	tci = (tci/quant * (255)).astype(np.uint8)
 
 	kwargs = bands[0].meta.copy()
-	kwargs.update({'count':3,'driver':'JP2OpenJPEG','height':px_rows,'width':px_cols,
-		'dtype':'uint8','compress':'lzw','TILED':True,'blockxsize':1024,'blockysize':1024,'codec':'J2K'})
+	kwargs.update({'count':3,
+		# 'driver':'GTiff',
+		'driver':'JP2OpenJPEG','codec':'J2K',
+		'height':px_rows,
+		'width':px_cols,
+		'dtype':'uint8',
+		'TILED':True,'blockxsize':512,'blockysize':512,
+		})
+
+	#1.TCI 
+	tci_rgb_zeroed = tci.copy()
+	tci_rgb_zeroed[rgb_zeromask] = 255
+	path_all = path[:-4] + '_ALL.jp2' #actually change it
 
 	start = time.perf_counter()
-	with rio.open('ALL_'+path,'w',**kwargs) as dst:
-		dst.write(tci_by_band,indexes=[1,2,3])
+	with rio.open(path_all,'w',photometric='RGB',**kwargs) as dst:
+		dst.write(tci_rgb_zeroed,indexes=[1,2,3])
 	stop  = time.perf_counter()
-	print("TCI written to %s" % 'ALL_'+path)
-	print("Time to plot tci: %.5f" % (stop-start))
-	os.remove('ALL_'+path+'.aux.xml')
+
+	print("TCI written to %s" % path_all)
+	print("time: %.5f" % (stop-start))
+	if os.path.isfile(path_all + '.aux.xml'):
+		os.remove(path_all + '.aux.xml')
+
+	#2.TCI with AND operation of the nodata mask across each band. This results in correct nodata 
+	tci_and_zeroed = tci
+	tci_and_zeroed[1,and_zeromask] = 255
+	path_and = path[:-4] + '_AND.jp2'
+
+	# nodata_in_data_area = rgb_zeromask.any(axis=0) & ~and_zeromask 
 
 	start = time.perf_counter()
-	tci_and = tci_clipped.copy()
-	tci_and[1,and_zeromask] = 255
-	with rio.open('AND_'+path,'w',photometric='RGB',**kwargs) as dst:
-		dst.write(tci_and,indexes=[1,2,3])
+	with rio.open(path_and,'w',photometric='RGB',**kwargs) as dst:
+		# dst.write(tci_and_zeroed,indexes=[1,2,3])
+		dst.write(a,indexes=[1,2,3])
 	stop  = time.perf_counter()		
-	print("TCI written to %s" % 'AND_'+path)
-	print("Time to plot tci: %.5f" % (stop-start))	
-	os.remove('AND_'+path+'.aux.xml')
-
-	start = time.perf_counter()
-	tci_or = tci_clipped.copy()
-	tci_or[1,or_zeromask] = 255
-	with rio.open('OR_'+path,'w',photometric='RGB',**kwargs) as dst:
-		dst.write(tci_or,indexes=[1,2,3])
-	stop  = time.perf_counter()		
-	print("TCI written to %s" % 'OR_'+path)
-	print("Time to plot tci: %.5f" % (stop-start))	
-	os.remove('OR_'+path+'.aux.xml')
-
-	return True
+	print("TCI written to %s" % path_and)
+	print("time: %.5f" % (stop-start))
+	if os.path.isfile(path_and + 'aux.xml'):	
+		os.remove(path_and + '.aux.xml')
 
 #TODO
 def save_tci_window(path,bands,quant_val,offsets,window):
@@ -871,5 +870,5 @@ if __name__ == '__main__':
 	label_windows = get_windows(label_borders)
 
 	# print(safe_dir)
-	check_tci(gee_id+'_tci.jp2',[band2,band3,band4],quant_val,offsets[0:3],input_borders)
+	plot_tci('./fig/'+gee_id+'_TCI.jp2',[band2,band3,band4],quant_val,offsets[0:3],input_borders)
 	# plot_checkerboard(gee_id+'_chk.tif',label,label_borders,label_windows)
