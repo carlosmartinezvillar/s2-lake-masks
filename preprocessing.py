@@ -26,20 +26,21 @@ ns = {
 
 plt.style.use('fast')
 
-LABEL_DIR = 'dynamicworld'
-TILE_SIZE = 256
+
+CHIP_SIZE = 256
 WATER_MIN = 128*64
-WATER_MAX = TILE_SIZE*TILE_SIZE - WATER_MIN
+WATER_MAX = CHIP_SIZE*CHIP_SIZE-WATER_MIN
 
 DATA_DIR = os.getenv('DATA_DIR')
 if DATA_DIR is None:
 	DATA_DIR = './dat'
+
+LABEL_DIR = DATA_DIR + '/dynamicworld'
 CHIP_DIR  = DATA_DIR + '/chp'
 
 ####################################################################################################
 # BAND ARITHMETIC
 ####################################################################################################
-
 def minmax_normalize(img: ndarray, by_band: bool=True) -> ndarray:
 	"""
 	Unit-normalize a set of bands individually, or across all bands, using min and max values.
@@ -69,58 +70,15 @@ def minmax_normalize(img: ndarray, by_band: bool=True) -> ndarray:
 		maxs = np.array([band.max() for band in img]).reshape((B_n,1,1))
 		return (img - mins) / (maxs - mins)
 
-
-def get_ndwi(b3: ndarray, b8: ndarray) -> ndarray:
-	"""
-	Parameters
-	----------
-	b3: ndarray
-		Green band.
-
-	b8: ndarray
-		NIR band.
-
-	Returns
-	-------
-	result: ndarray
-		A single band ndarray with the calculated NDWI with values in the range 
-		(-1,1).
-	"""
-	return (b3-b8)/(b3+b8)
-
 ####################################################################################################
 # HISTOGRAMS, ET CETERA
 ####################################################################################################
-def plot_ndwi(b3,b4,b8):
-	#NIR->R, R->G, G->B -- colour ir for plotting.
-	pass
-
-
-def plot_img(path: str, img: ndarray, lib: str='opencv') -> None:
-	if lib == 'opencv':
-		#order is BGR, [M,N,Chans]
-		cv.imwrite(path,img)
-
-	elif lib == 'pil':
-		if len(img.shape) == 2:
-			Image.fromarray(np.uint8(unit_normalize(img)*255)).save(path)
-
-	elif lib == 'pyplot':
-		if len(img.shape) == 2:
-			plt.imsave(path,img,cmap=Greys)
-		if len(img.shape) == 3:
-			plt.imsave(path,img[:,:,::-1]) #flip BGR to RGB
-
-	else:
-		print("Please specify a library for plot_img().")
-
-
-def band_hist(path: str, band: ndarray, title: str, n_bins: int) -> None:
+def band_hist(path: str, band: ndarray, title: str, n_bins: int=625) -> None:
 	fig,ax = plt.subplots()
 	ax.set_title(title)
 	ax.hist(band.flatten(),bins=n_bins)
 	plt.savefig(path)
-
+	print("Band plot saved to %s." % path)
 
 def multiband_hist(path: str, img: ndarray, title: str, subtitle: List[str], n_bins: int) -> None:
 	colors = ['r','g','b','darkred']
@@ -413,8 +371,8 @@ def get_windows(borders):
 	n_cols = borders['right'] + 1 - borders['left']
 
 	#nr of blocks in each direction
-	block_rows = n_rows // TILE_SIZE
-	block_cols = n_cols // TILE_SIZE
+	block_rows = n_rows // CHIP_SIZE
+	block_cols = n_cols // CHIP_SIZE
 	
 	#total blocks
 	N = block_rows * block_cols
@@ -424,25 +382,16 @@ def get_windows(borders):
 	for k in range(N):
 		i = k // block_cols
 		j = k % block_cols
-		row_start = i * TILE_SIZE + borders['top']
-		# row_stop  = row_start + TILE_SIZE
-		col_start = j * TILE_SIZE + borders['left']
-		# col_stop  = col_start + TILE_SIZE
+		row_start = i * CHIP_SIZE + borders['top']
+		# row_stop  = row_start + CHIP_SIZE
+		col_start = j * CHIP_SIZE + borders['left']
+		# col_stop  = col_start + CHIP_SIZE
 
-		W = Window(col_start,row_start,TILE_SIZE,TILE_SIZE)
+		W = Window(col_start,row_start,CHIP_SIZE,CHIP_SIZE)
 		# W += [Window.from_slices((row_start,row_stop),(col_start,col_stop))]
 		windows += [[(str(i),str(j)),W]]
 
 	return windows
-
-
-def upsample_mask(mask: ndarray) -> ndarray:
-	"""
-	Duplicate the size of the array containing the Sentinel-2 SCL 20m masks.
-	"""
-	# t_mask = torch.tensor(mask) ----> type error here
-	# return torch.nn.functional.upsample(t_mask,scale_factor=2,mode='nearest')
-	return np.repeat(np.repeat(mask,2,axis=0),2,axis=1)
 
 
 def plot_label_multiclass(path,dw_reader,borders):
@@ -491,8 +440,8 @@ def plot_label_multiclass_windowed(path,dw_reader,borders,windows):
 	#height
 	height = borders['bottom'] + 1 - borders['top']
 	width  = borders['right'] + 1 - borders['left']
-	height = height - (height % TILE_SIZE) + 1 #not sure if safe
-	width = width - (width % TILE_SIZE) + 1
+	height = height - (height % CHIP_SIZE) + 1 #not sure if safe
+	width = width - (width % CHIP_SIZE) + 1
 
 	#writer config
 	kwargs = dw_reader.meta.copy()
@@ -519,16 +468,17 @@ def plot_label_multiclass_windowed(path,dw_reader,borders,windows):
 def plot_checkerboard(path,dw_reader,borders,windows):
 	"""
 	Plots whole label raster with overlaying squares corresponding to
-	the blocks/windows used as chips.
+	the blocks/windows used as chips. Red squares are chips discarded, yellow
+	squares are chips kept.
 	"""
 	DW_PALETTE_10 = ['000000','419bdf','397d49','88b053','7a87c6','e49635', 
 	    'dfc35a','c4281b','a59b8f','b39fe1'];
 
 	#Get lines -- red FF0000, yellow FFFF00
-	yellow_line      = np.ones((3,TILE_SIZE))
+	yellow_line      = np.ones((3,CHIP_SIZE))
 	yellow_line[0:2] = 65535
 	yellow_line[2]   = 0
-	red_line         = np.ones((3,TILE_SIZE))
+	red_line         = np.ones((3,CHIP_SIZE))
 	red_line[0]      = 65535
 	red_line[1:2]    = 0
 
@@ -584,7 +534,7 @@ def plot_checkerboard(path,dw_reader,borders,windows):
 					arr3[:,:,-(i+1)] = red_line #right
 
 		#adjust window:pos in reader to pos in writer
-		w2 = Window(w.col_off-borders['left'],w.row_off-borders['top'],TILE_SIZE,TILE_SIZE)
+		w2 = Window(w.col_off-borders['left'],w.row_off-borders['top'],CHIP_SIZE,CHIP_SIZE)
 		
 		#WRITE
 		out_ptr.write(arr3,window=w2,indexes=[1,2,3])
@@ -592,22 +542,22 @@ def plot_checkerboard(path,dw_reader,borders,windows):
 	print("Nr of good chips in raster: %i" % correct_count)
 
 	#PLOT REMAINING IMAGE BEYOND WINDOWS
-	block_rows     = height // TILE_SIZE
-	block_cols     = width // TILE_SIZE
-	remainder_rows = height % TILE_SIZE
-	remainder_cols = width % TILE_SIZE
+	block_rows     = height // CHIP_SIZE
+	block_cols     = width // CHIP_SIZE
+	remainder_rows = height % CHIP_SIZE
+	remainder_cols = width % CHIP_SIZE
 
 	#bottom edge
 	reader_window = Window(
 		col_off=borders['left'],
-		row_off=borders['top']+block_rows*TILE_SIZE,
-		width=block_cols*TILE_SIZE,
+		row_off=borders['top']+block_rows*CHIP_SIZE,
+		width=block_cols*CHIP_SIZE,
 		height=remainder_rows) #reader,starts at border['top'],borders['left']
 
 	writer_window = Window(
 		col_off=0,
-		row_off=block_rows*TILE_SIZE,
-		width=block_cols*TILE_SIZE,
+		row_off=block_rows*CHIP_SIZE,
+		width=block_cols*CHIP_SIZE,
 		height=remainder_rows) #writer,starts at 0,0
 
 	arr = dw_reader.read(1,window=reader_window)
@@ -621,13 +571,13 @@ def plot_checkerboard(path,dw_reader,borders,windows):
 
 	#right edge
 	reader_window = Window(
-		col_off=borders['left']+block_cols*TILE_SIZE,
+		col_off=borders['left']+block_cols*CHIP_SIZE,
 		row_off=borders['top'],
 		width = remainder_cols,
 		height = height)
 
 	writer_window = Window(
-		col_off=block_cols*TILE_SIZE,
+		col_off=block_cols*CHIP_SIZE,
 		row_off=0,
 		width=remainder_cols,
 		height=height) #writer, starts at 0,0
@@ -641,7 +591,7 @@ def plot_checkerboard(path,dw_reader,borders,windows):
 		arr3[:,arr==c] = [[r],[g],[b]]
 	out_ptr.write(arr3,window=writer_window,indexes=[1,2,3])
 	
-#TODO
+
 def clip_tails(img: ndarray, bottom: int=1, top: int=99) -> ndarray:
 	"""
 	Remove the values below the 'bottom' and  above 'top' percent in an image.
@@ -663,7 +613,7 @@ def clip_tails(img: ndarray, bottom: int=1, top: int=99) -> ndarray:
 	#input check
 	try:
 		assert bottom < 100 and bottom >= 0, \
-			"'bottom' must be between 0 and 99 inclusive."
+			"Int 'bottom' must be between 0 and 99 inclusive."
 		assert top <= 100 and top > 0, \
 			"Int 'top' must be between 1 and 100 inclusive."
 		assert top > bottom, \
@@ -674,22 +624,44 @@ def clip_tails(img: ndarray, bottom: int=1, top: int=99) -> ndarray:
 
  	return np.clip(img, bottom*0.01*img.min(), top*0.01*img.max())
 
-#TODO
+# CHECK
 def folder_check():
 	'''
 	Do a folder check to remove any folder with bands if that folder does not have a matching .tif
 	dynanmic world label.
 	'''
-	for folder in os.listdir(DATA_DIR):
-		if folder != 'dynamicworld':
+	folders = [f for f in os.listdir(DATA_DIR) if f!='dynamicworld' and f[-5:]=='.SAFE']
+	for folder in folders:
+		# get xml
+		xml_name = [f for f in os.listdir(DATA_DIR + id) if f[-4:]=='.xml'][0] #bc MTD, MTD_L2A
+		xml_path = '/'.join([DATA_DIR,folder,xml_filename])	
 
-			# get xml
-			xml_name = [f for f in os.listdir(DATA_DIR + id) if f[-4:]=='.xml'][0] #bc MTD, MTD_L2A
-			xml_path = DATA_DIR + '/'.join([id,xml_filename])	
+		# get dynarmicworld id
+		dstrip, _, _ = parse_xml(xml_path)
+		date         = folder[11:26]
+		tile         = folder[38:44]		
+		dw_id        = '_'.join([date,datastrip,tile])
 
-			# 
-	pass
-	return
+		#delete all scl's
+		scl_file = '_'.join([tile,date,'SCL','20m.jp2'])
+		scl_path = '/'.join([DATA_DIR,folder,scl_file])
+		if os.path.isfile(scl_path):
+			os.remove(scl_path)
+
+		#if dw...
+		if os.path.isfile(LABEL_DIR+'/'+dw_id+'.tif'):
+			# exists, check files in .SAFE
+			n_files = len(os.listdir(folder))
+			if n_files != 5:
+				print("Folder %s has <5 files." % folder) #in case we actually need to check
+		else:
+			# d.n.e, remove whole .SAFE dir
+			for file in os.listdir(folder):
+				os.remove('/'.join([DATA_DIR,folder,file]))
+			os.rmdir(folder)
+
+			print("Folder %s removed." % folder)
+	
 
 #TODO
 def plot_label_singleclass_windowed():
@@ -746,14 +718,13 @@ def check_label_window(arr: ndarray):
 	else:			
 		n_water = (arr==1).sum()
 		if n_water > WATER_MIN and n_water < WATER_MAX:
+			#same as <---- yellow line
 			pass
-			#yellow line
-
 			correct_count += 1
 
 
 		else:
-			#red line
+			#same as <---- red line
 			pass
 
 	return True
@@ -783,11 +754,11 @@ def process_product(id: str):
 	dw_path = DATA_DIR + '/'.join([LABEL_DIR,gee_id]) + '.tif'
 
 	#3.BAND PATHS, DW PATH -> DatasetReader x 5
-	label = rio.open(label_path,'r',tiled=True,blockxsize=TILE_SIZE,blockysize=TILE_SIZE)
-	band2 = rio.open(band_paths[0],'r',tiled=True,blockxsize=TILE_SIZE,blockysize=TILE_SIZE)
-	band3 = rio.open(band_paths[1],'r',tiled=True,blockxsize=TILE_SIZE,blockysize=TILE_SIZE)
-	band4 = rio.open(band_paths[2],'r',tiled=True,blockxsize=TILE_SIZE,blockysize=TILE_SIZE)
-	band8 = rio.open(band_paths[3],'r',tiled=True,blockxsize=TILE_SIZE,blockysize=TILE_SIZE)
+	label = rio.open(label_path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+	band2 = rio.open(band_paths[0],'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+	band3 = rio.open(band_paths[1],'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+	band4 = rio.open(band_paths[2],'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+	band8 = rio.open(band_paths[3],'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
 
 	#4.DW READER -> BOUNDARIES DW
 
@@ -806,8 +777,8 @@ def plot_tci_windowed(dst_path,bands,borders,windows):
 	#need to know size of output
 	px_rows = borders['bottom'] - borders['top'] + 1
 	px_cols = borders['right'] - borders['left'] + 1
-	px_rows_blocks = px_rows - (px_rows % TILE_SIZE - 1)
-	px_cols_blocks = px_cols - (px_cols % TILE_SIZE -1)
+	px_rows_blocks = px_rows - (px_rows % CHIP_SIZE - 1)
+	px_cols_blocks = px_cols - (px_cols % CHIP_SIZE -1)
 
 
 
@@ -849,7 +820,7 @@ def plot_tci(path:str, bands:[rio.DatasetReader], quant:int, offsets:[int], bord
 		'height':px_rows,
 		'width':px_cols,
 		'dtype':'uint8',
-		'TILED':True,'blockxsize':512,'blockysize':512,
+		'tiled':True,'blockxsize':512,'blockysize':512,
 		})
 
 	#1.TCI 
@@ -900,21 +871,21 @@ if __name__ == '__main__':
 	safe_dir = folders[2]
 
 	#PARSE XML INFO
-	xml_file = [f for f in os.listdir(DATA_DIR + safe_dir) if f[-4:]=='.xml'][0] #bc MTD, MTD_L2A
+	xml_file = [f for f in os.listdir(DATA_DIR+'/'+safe_dir) if f[-4:]=='.xml'][0] #bc MTD, MTD_L2A
 	xml_path = DATA_DIR + '/'.join([safe_dir,xml_file])
 	datastrip,quant_val,offsets = parse_xml(xml_path)
 
 	#GET FILE PATHS
 	gee_id = get_gee_id(safe_dir,datastrip)
-	label_path = DATA_DIR + '/'.join([LABEL_DIR,gee_id]) + '.tif'
+	label_path = LABEL_DIR + '/' + gee_id + '.tif'
 	band_fname = get_band_filenames(safe_dir,['B02','B03','B04','B08'])
-	band_paths = [DATA_DIR + safe_dir + '/' + _  for _ in band_fname]
+	band_path  = ['/'.join([DATA_DIR,safe_dir,_]) for _ in band_fname]
 
-	label = rio.open(label_path,'r',tiled=True,blockxsize=TILE_SIZE,blockysize=TILE_SIZE)
-	band2 = rio.open(band_paths[0],'r',tiled=True,blockxsize=TILE_SIZE,blockysize=TILE_SIZE)
-	band3 = rio.open(band_paths[1],'r',tiled=True,blockxsize=TILE_SIZE,blockysize=TILE_SIZE)
-	band4 = rio.open(band_paths[2],'r',tiled=True,blockxsize=TILE_SIZE,blockysize=TILE_SIZE)
-	# band8 = rio.open(band_paths[3],'r',tiled=True,blockxsize=TILE_SIZE,blockysize=TILE_SIZE)
+	label = rio.open(label_path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+	band2 = rio.open(band_paths[0],'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+	band3 = rio.open(band_paths[1],'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+	band4 = rio.open(band_paths[2],'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+	# band8 = rio.open(band_paths[3],'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
 	
 	#EQUATE LABEL PIXEL BORDERS
 	label_borders = remove_borders(label)
