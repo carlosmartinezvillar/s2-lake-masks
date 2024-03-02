@@ -1,4 +1,3 @@
-import rasterio as rio
 # import cv2 as cv
 import math
 import matplotlib.pyplot as plt
@@ -7,6 +6,7 @@ import os
 import xml.etree.ElementTree as ET
 import time
 import sys
+import rasterio as rio
 from rasterio.windows import Window
 
 ####################################################################################################
@@ -205,7 +205,7 @@ def get_gee_id(s2_id: str, datastrip: str) -> str:
 	return gee_id
 
 
-def get_band_filename(s2_ id: str, band: str) -> str:
+def get_band_filename(s2_id: str, band: str) -> str:
 	'''
 	Given a Sentinel-2 product name and band, return the band image file name.
 	'''
@@ -244,7 +244,7 @@ def remove_borders_as_array(dw_array: ndarray) -> ndarray:
 	return dw_array[top:bottom+1,left:right+1],{'top':top,'bottom':bottom,'left':left,'right':right}
 
 
-def remove_borders(src):
+def remove_borders(src: rio.DatasetReader) -> dict:
 	'''
 	Take a rasterio DatasetReader for a dynamicworld image and get the indices 
 	where non-zeros begin at the top, bottom, left, and right.
@@ -321,23 +321,16 @@ def convert_bounds(dw,s2,dw_ij_dict):
 	# (18, 3391) (10959, 3391) (10959, 10958) (18, 10958) before
 	# (19, 3391) (10958, 3391) (10958, 10958) (19, 10958) after removing bounds
 	dw_xy_ul = dw.xy(dw_ij_dict['top'],dw_ij_dict['left'],offset='center')
-	# dw_xy_ll = dw.xy(dw_ij_dict['bottom'],dw_ij_dict['left'],offset='center')
 	dw_xy_lr = dw.xy(dw_ij_dict['bottom'],dw_ij_dict['right'],offset='center')
-	# dw_xy_ur = dw.xy(dw_ij_dict['top'],dw_ij_dict['right'],offset='center')
 	s2_ij_ul = s2.index(dw_xy_ul[0],dw_xy_ul[1],op=math.floor)
-	# s2_ij_ll = s2.index(dw_xy_ll[0],dw_xy_ll[1],op=math.floor)
 	s2_ij_lr = s2.index(dw_xy_lr[0],dw_xy_lr[1],op=math.floor)
-	# s2_ij_ur = s2.index(dw_xy_ur[0],dw_xy_ur[1],op=math.floor)
 
-	#return corners
-	# return s2_ij_ul,s2_ij_ll,s2_ij_lr,s2_ij_ur
-
-	#return dict of bounds instead
+	#return dict of bounds
 	return {'top':s2_ij_ul[0],'bottom':s2_ij_lr[0],
 		'left':s2_ij_ul[1],'right':s2_ij_lr[1]}
 
 
-def get_windows(borders):
+def get_windows(borders: dict) -> [Tuple]:
 	'''
 	Given a set of starting and stopping boundaries, returns an array list with
 	tuples (i,j) for block indices i,j and window objects corresponding to the
@@ -590,39 +583,6 @@ def plot_checkerboard(path,dw_reader,borders,windows):
 		b = int(DW_PALETTE_10[c][4:6],16)
 		arr3[:,arr==c] = [[r],[g],[b]]
 	out_ptr.write(arr3,window=writer_window,indexes=[1,2,3])
-	
-
-def clip_tails(img: ndarray, bottom: int=1, top: int=99) -> ndarray:
-	"""
-	Remove the values below the 'bottom' and  above 'top' percent in an image.
-
-	Parameters
-	----------
-	img: numpy.ndarray	
-		The raster image.
-	bottom: int
-		Bottom amount to be removed in percentage
-	top: int
-		Top amount to be removed in percentage.9
-
-	Returns
-	-------
-	result: numpy.ndarray
-	"""
-
-	#input check
-	try:
-		assert bottom < 100 and bottom >= 0, \
-			"Int 'bottom' must be between 0 and 99 inclusive."
-		assert top <= 100 and top > 0, \
-			"Int 'top' must be between 1 and 100 inclusive."
-		assert top > bottom, \
-			"Upper boundary 'top' must be greater than 'bottom'."
-	except AssertionError as e:
-		print("In clip_tail():")
-		raise AssertionError from e
-
- 	return np.clip(img, bottom*0.01*img.min(), top*0.01*img.max())
 
 # CHECK
 def folder_check():
@@ -661,7 +621,6 @@ def folder_check():
 			os.rmdir(folder)
 
 			print("Folder %s removed." % folder)
-	
 
 #TODO
 def plot_label_singleclass_windowed():
@@ -687,7 +646,7 @@ def chip_image_cpu(img: ndarray, windows: List[Tuple]) -> ndarray:
 	return
 
 #TODO
-def chip_image_gpu(img: ndarray, chp_size: int=256) -> ndarray:
+def chip_image_gpu(img: ndarray) -> ndarray:
 	pass
 
 #TODO
@@ -761,14 +720,16 @@ def process_product(id: str):
 	band8 = rio.open(band_paths[3],'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
 
 	#4.DW READER -> BOUNDARIES DW
-
+	label_borders = remove_borders(label)
 
 	#5.BOUNDARIES DW, BAND READER x 4 -> BOUNDARIES S2
+	input_borders = convert_bounds(label,band2,label_borders)
 
 	#6.BOUNDARIES S2, BOUNDARIES DW -> WINDOWS DW, WINDOWS S2 
+	input_windows = get_windows(input_borders)
+	label_windows = get_windows(label_borders)
 
 	#7.ITERATE THROUGH WINDOWS
-
 	pass
 
 #TODO
@@ -785,37 +746,17 @@ def plot_tci_windowed(dst_path,bands,borders,windows):
 	return True
 
 #TODO
-def plot_tci(path:str, bands:[rio.DatasetReader], quant:int, offsets:[int], borders: dict):
-	"""
+def plot_tci_masks(fname:str, bands:[rio.DatasetReader], quant:int, offsets:[int], borders: dict):
+	'''
 	Plot whole rgb image with the nodata borders removed.
-	"""
-
+	'''
 	#Full image minus no-data borders
 	px_rows = borders['bottom'] + 1 - borders['top']
 	px_cols = borders['right'] + 1 - borders['left']
 	w = Window(borders['left'],borders['top'],px_cols,px_rows)
 
-	#Stack bands
-	b,g,r = (_.read(1,window=w) for _ in bands)
-	tci   = np.stack([r,g,b],axis=0)
-
-	#nodata
-	rgb_zeromask = tci==0
-	and_zeromask = rgb_zeromask.all(axis=0) #and axis 0
-
-	#clip and shift
-	if sum(offsets) > 0:
-		tci = np.clip(tci,1001,11000) #[1001,11000]
-		tci = (tci + np.array(offsets).reshape(3,1,1)) #[1,10000]
-	else:
-		tci = np.clip(tci,1,10000)
-
-	#Normalize to [0.0, 1.0] with 10000, mult by bit factor
-	tci = (tci/quant * (255)).astype(np.uint8)
-
 	kwargs = bands[0].meta.copy()
 	kwargs.update({'count':3,
-		# 'driver':'GTiff',
 		'driver':'JP2OpenJPEG','codec':'J2K',
 		'height':px_rows,
 		'width':px_cols,
@@ -823,37 +764,104 @@ def plot_tci(path:str, bands:[rio.DatasetReader], quant:int, offsets:[int], bord
 		'tiled':True,'blockxsize':512,'blockysize':512,
 		})
 
-	#1.TCI 
-	tci_rgb_zeroed = tci.copy()
-	tci_rgb_zeroed[rgb_zeromask] = 255
-	path_all = path[:-4] + '_ALL.jp2' #actually change it
+	#Stack bands
+	b,g,r = (_.read(1,window=w) for _ in bands)
+	tci   = np.stack([r,g,b],axis=0).astype(np.int_16)
 
-	start = time.perf_counter()
+	# nodata
+	rgb_zeromask = tci == 0
+	and_zeromask = rgb_zeromask.all(axis=0) #AND thru axis 0
+
+	# clipped/saturated data
+	esa_highmask = (tci >= 10000).any(axis=0)
+
+	pctiles_99 = [np.percentile(b[~rgb_zeromask[i]],99.9) for i,b in enumerate(tci)]
+	pctiles_99 = np.array(pctiles_99).reshape((3,1,1))
+	pct_highmask = tci > pctiles_99
+	pct_highmask = pct_highmask.any(axis=0)
+
+	# # clip to [1001,11000] and shift
+	# if sum(offsets) > 0:
+	# 	tci = np.clip(tci,1001,11000) #[1001,11000]
+	# 	tci = (tci + np.array(offsets).reshape(3,1,1)) #[1,10000]
+	# else:
+	# 	tci = np.clip(tci,1,10000)
+
+	# # clip to 1,99 percentile
+	# tci = [np.clip(b,np.percentile(b,1),np.percentile(b,99)) for b in tci]
+	# tci = minmax_normalize(tci,by_band=True)
+	# tci = (tci * 255).astype(np.uint8)
+
+	# AS IS
+	tci_esa = tci.copy()
+	tci_esa = np.clip(tci_esa,0,10000)
+	tci_esa = (minmax_normalize(tci_esa,by_band=True) * 255).astype(np.uint8)
+
+	tci[0] = np.clip(tci[0],0,pctiles_99[0])
+	tci[1] = np.clip(tci[1],0,pctiles_99[1])
+	tci[2] = np.clip(tci[2],0,pctiles_99[2])
+	tci = (minmax_normalize(tci,by_band=True) * 255).astype(np.uint8)
+
+	# 0. TCI - AS IS
+	#-----------------------------------------------------------------
+	path = './fig/'+fname+'_10000.jp2'
+	with rio.open(path,'w',photometric='RGB',**kwargs) as dst:
+		dst.write(tci_esa,indexes=[1,2,3])
+	print("TCI written to %s" % path)
+
+	path = './fig/'+fname+'_99.jp2'
+	with rio.open(path,'w',photometric='RGB',**kwargs) as dst:
+		dst.write(tci,indexes=[1,2,3])
+	print("TCI written to %s" % path)
+
+
+	#1.TCI - ZERO PIXELS IN EACH BAND SET TO MAX
+	#-----------------------------------------------------------------
+	tci_all = tci.copy()
+	tci_all[rgb_zeromask] = 255
+	path_all = './fig/' + fname + '_ZERO_ALL.jp2'
 	with rio.open(path_all,'w',photometric='RGB',**kwargs) as dst:
-		dst.write(tci_rgb_zeroed,indexes=[1,2,3])
-	stop  = time.perf_counter()
-
+		dst.write(tci_all,indexes=[1,2,3])
 	print("TCI written to %s" % path_all)
-	print("time: %.5f" % (stop-start))
-	if os.path.isfile(path_all + '.aux.xml'):
-		os.remove(path_all + '.aux.xml')
 
-	#2.TCI with AND operation of the nodata mask across each band. This results in correct nodata 
-	tci_and_zeroed = tci
-	tci_and_zeroed[1,and_zeromask] = 255
-	path_and = path[:-4] + '_AND.jp2'
-
-	# nodata_in_data_area = rgb_zeromask.any(axis=0) & ~and_zeromask 
-
-	start = time.perf_counter()
+	#2.TCI - AND OF ZERO PIXELS SET TO MAX IN GREEN(correct masking)
+	#-----------------------------------------------------------------
+	tci_and = tci.copy()
+	tci_and[0,and_zeromask] = 255
+	tci_and[1,and_zeromask] = 0
+	tci_and[2,and_zeromask] = 0
+	path_and = './fig/'+fname+'_ZERO_AND.jp2'
 	with rio.open(path_and,'w',photometric='RGB',**kwargs) as dst:
-		# dst.write(tci_and_zeroed,indexes=[1,2,3])
-		dst.write(a,indexes=[1,2,3])
-	stop  = time.perf_counter()		
+		dst.write(tci_and,indexes=[1,2,3])
 	print("TCI written to %s" % path_and)
-	print("time: %.5f" % (stop-start))
-	if os.path.isfile(path_and + 'aux.xml'):	
-		os.remove(path_and + '.aux.xml')
+
+	#3.TCI - HI (>10k) PIXELS SET TO MAX IN RED
+	#-----------------------------------------------------------------	
+	tci_hi1 = tci.copy()
+	tci_hi1[0,esa_highmask] = 255
+	tci_hi1[1,esa_highmask] = 0
+	tci_hi1[2,esa_highmask] = 0
+	path_hi1 = './fig/'+fname+'_HIGH_ESA.jp2'
+	with rio.open(path_hi1,'w',photometric='RGB',**kwargs) as dst:
+		dst.write(tci_hi1)
+
+	print("TCI written to %s" % path_hi1)
+
+
+	#3.TCI - HI (>99%) PIXELS SET TO MAX IN RED
+	#-----------------------------------------------------------------	
+	tci_hi2 = tci.copy()
+	tci_hi2[0,pct_highmask] = 255
+	tci_hi2[1,pct_highmask] = 0
+	tci_hi2[2,pct_highmask] = 0
+	path_hi2 = './fig/'+fname+'_HIGH_PCT.jp2'
+	with rio.open(path_hi2,'w',photometric='RGB',**kwargs) as dst:
+		dst.write(tci_hi2)
+	print("TCI written to %s" % path_hi2)
+
+	for f in os.listdir('./fig'):
+		if f[-3:] == 'xml':
+			os.remove('./fig/'+f)
 
 #TODO
 def save_tci_window(path,bands,quant_val,offsets,window):
@@ -868,11 +876,11 @@ if __name__ == '__main__':
 	folders  = [d for d in os.listdir(DATA_DIR) if d[-5:]=='.SAFE']
 	
 	#A SINGLE FOLDER
-	safe_dir = folders[2]
+	safe_dir = folders[0]
 
 	#PARSE XML INFO
 	xml_file = [f for f in os.listdir(DATA_DIR+'/'+safe_dir) if f[-4:]=='.xml'][0] #bc MTD, MTD_L2A
-	xml_path = DATA_DIR + '/'.join([safe_dir,xml_file])
+	xml_path = '/'.join([DATA_DIR,safe_dir,xml_file])
 	datastrip,quant_val,offsets = parse_xml(xml_path)
 
 	#GET FILE PATHS
@@ -882,10 +890,10 @@ if __name__ == '__main__':
 	band_path  = ['/'.join([DATA_DIR,safe_dir,_]) for _ in band_fname]
 
 	label = rio.open(label_path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
-	band2 = rio.open(band_paths[0],'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
-	band3 = rio.open(band_paths[1],'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
-	band4 = rio.open(band_paths[2],'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
-	# band8 = rio.open(band_paths[3],'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+	band2 = rio.open(band_path[0],'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+	band3 = rio.open(band_path[1],'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+	band4 = rio.open(band_path[2],'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+	band8 = rio.open(band_path[3],'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
 	
 	#EQUATE LABEL PIXEL BORDERS
 	label_borders = remove_borders(label)
@@ -896,5 +904,12 @@ if __name__ == '__main__':
 	label_windows = get_windows(label_borders)
 
 	print(safe_dir)
-	plot_tci('./fig/'+gee_id+'_TCI.jp2',[band2,band3,band4],quant_val,offsets[0:3],input_borders)
+	print("-"*80)
+	# plot_tci_masks(gee_id+'_TCI',[band2,band3,band4],quant_val,offsets[0:3],input_borders)
 	# plot_checkerboard(gee_id+'_chk.tif',label,label_borders,label_windows)
+
+	# px_rows = input_borders['bottom'] + 1 - input_borders['top']
+	# px_cols = input_borders['right'] + 1 - input_borders['left']
+	# w = Window(input_borders['left'],input_borders['top'],px_cols,px_rows)
+	# band2.read(1,window=w)
+	# band_hist(path, , "B02")
