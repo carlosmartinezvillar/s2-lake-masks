@@ -73,10 +73,11 @@ def minmax_normalize(img: ndarray, by_band: bool=True) -> ndarray:
 ####################################################################################################
 # HISTOGRAMS, ET CETERA
 ####################################################################################################
-def band_hist(path: str, band: ndarray, title: str, n_bins: int=625) -> None:
+def band_hist(path: str, band: ndarray, title: str, n_bins: int=4096) -> None:
+	nonzeros = band[band!=0].flatten()
 	fig,ax = plt.subplots()
 	ax.set_title(title)
-	ax.hist(band.flatten(),bins=n_bins)
+	ax.hist(nonzeros,bins=n_bins)
 	plt.savefig(path)
 	print("Band plot saved to %s." % path)
 
@@ -85,7 +86,7 @@ def multiband_hist(path: str, img: ndarray, title: str, subtitle: List[str], n_b
 	fig, ax = plt.subplots(nrows=1,ncols=bands.shape[0],sharey=True,tight_layout=True)
 	fig.suptitle(title)
 	for i in range(img.shape[0]):
-		ax[i].hist(img[i].flatten(),bins=n_bins)
+		ax[i].hist(img[i][img[i]!=0].flatten(),bins=n_bins)
 		ax[i].set_title(subtitle[i])
 	plt.savefig(path)
 
@@ -753,7 +754,7 @@ def plot_tci_masks(fname:str, bands:[rio.DatasetReader], quant:int, offsets:[int
 	#Full image minus no-data borders
 	px_rows = borders['bottom'] + 1 - borders['top']
 	px_cols = borders['right'] + 1 - borders['left']
-	w = Window(borders['left'],borders['top'],px_cols,px_rows)
+	w       = Window(borders['left'],borders['top'],px_cols,px_rows)
 
 	kwargs = bands[0].meta.copy()
 	kwargs.update({'count':3,
@@ -766,99 +767,138 @@ def plot_tci_masks(fname:str, bands:[rio.DatasetReader], quant:int, offsets:[int
 
 	#Stack bands
 	b,g,r = (_.read(1,window=w) for _ in bands)
-	tci   = np.stack([r,g,b],axis=0).astype(np.int_16)
+	tci   = np.stack([r,g,b],axis=0).clip(0,32767).astype(np.int16) #[-32767,32767]
 
 	# nodata
 	rgb_zeromask = tci == 0
 	and_zeromask = rgb_zeromask.all(axis=0) #AND thru axis 0
+	esa_highmask = (tci >= 11000).any(axis=0) #OR thru axis 0
 
-	# clipped/saturated data
-	esa_highmask = (tci >= 10000).any(axis=0)
+	# add offsets
+	tci          = tci + np.array(offsets).reshape((3,1,1))
 
-	pctiles_99 = [np.percentile(b[~rgb_zeromask[i]],99.9) for i,b in enumerate(tci)]
-	pctiles_99 = np.array(pctiles_99).reshape((3,1,1))
-	pct_highmask = tci > pctiles_99
-	pct_highmask = pct_highmask.any(axis=0)
+	#calculate percentiles and get masks for them
+	pctiles_99 = np.array([np.percentile(b[~rgb_zeromask[i]],99.9) for i,b in enumerate(tci)])
+	pctiles_01 = np.array([np.percentile(b[~rgb_zeromask[i]],0) for i,b in enumerate(tci)])
+	pct_highmask = (tci > pctiles_99.reshape((3,1,1))).any(axis=0) #OR mask
+	pct_lowmask  = (tci < pctiles_01.reshape((3,1,1))).any(axis=0) #OR mask
+	print("Percentiles set to (RGB): %s,%s" % (str(pctiles_99),str(pctiles_01)))
 
-	# # clip to [1001,11000] and shift
-	# if sum(offsets) > 0:
-	# 	tci = np.clip(tci,1001,11000) #[1001,11000]
-	# 	tci = (tci + np.array(offsets).reshape(3,1,1)) #[1,10000]
-	# else:
-	# 	tci = np.clip(tci,1,10000)
-
-	# # clip to 1,99 percentile
-	# tci = [np.clip(b,np.percentile(b,1),np.percentile(b,99)) for b in tci]
-	# tci = minmax_normalize(tci,by_band=True)
-	# tci = (tci * 255).astype(np.uint8)
-
-	# AS IS
-	tci_esa = tci.copy()
-	tci_esa = np.clip(tci_esa,0,10000)
-	tci_esa = (minmax_normalize(tci_esa,by_band=True) * 255).astype(np.uint8)
-
-	tci[0] = np.clip(tci[0],0,pctiles_99[0])
-	tci[1] = np.clip(tci[1],0,pctiles_99[1])
-	tci[2] = np.clip(tci[2],0,pctiles_99[2])
-	tci = (minmax_normalize(tci,by_band=True) * 255).astype(np.uint8)
-
-	# 0. TCI - AS IS
+	# 0.TCI
 	#-----------------------------------------------------------------
+	tci_raw = (minmax_normalize(tci,by_band=True)*255).astype(np.uint8)
+	path = './fig/' + fname + '.jp2'
+	with rio.open(path,'w',photometric='RGB',**kwargs) as dst:
+		dst.write(tci_raw,indexes=[1,2,3])
+	print("TCI written to %s" % path)
+	del tci_raw
+
+	# 1.TCI - [0,10000]
+	#-----------------------------------------------------------------
+	#clip
+	tci_esa = tci.copy()
+	tci_esa[0] = np.clip(tci_esa[0],0+offsets[0],10000)
+	tci_esa[1] = np.clip(tci_esa[1],0+offsets[1],10000)
+	tci_esa[2] = np.clip(tci_esa[2],0+offsets[2],10000)
+
+	# normalize
+	tci_esa = (minmax_normalize(tci_esa,by_band=True)*255).astype(np.uint8)
+	
+	# save
 	path = './fig/'+fname+'_10000.jp2'
 	with rio.open(path,'w',photometric='RGB',**kwargs) as dst:
 		dst.write(tci_esa,indexes=[1,2,3])
 	print("TCI written to %s" % path)
+	del tci_esa
 
+	# 2.TCI - [0.01%,99.9%]
+	#-----------------------------------------------------------------
+	# clip
+	tci[0] = np.clip(tci[0],pctiles_01[0],pctiles_99[0])
+	tci[1] = np.clip(tci[1],pctiles_01[1],pctiles_99[1])
+	tci[2] = np.clip(tci[2],pctiles_01[2],pctiles_99[2])
+	
+	#normalize
+	tci = (minmax_normalize(tci,by_band=True)*254+1).astype(np.uint8)
+
+	#save
 	path = './fig/'+fname+'_99.jp2'
 	with rio.open(path,'w',photometric='RGB',**kwargs) as dst:
 		dst.write(tci,indexes=[1,2,3])
 	print("TCI written to %s" % path)
 
 
-	#1.TCI - ZERO PIXELS IN EACH BAND SET TO MAX
+	# 3.TCI - ZERO PIXELS IN EACH BAND SET TO MAX
 	#-----------------------------------------------------------------
-	tci_all = tci.copy()
-	tci_all[rgb_zeromask] = 255
-	path_all = './fig/' + fname + '_ZERO_ALL.jp2'
-	with rio.open(path_all,'w',photometric='RGB',**kwargs) as dst:
-		dst.write(tci_all,indexes=[1,2,3])
-	print("TCI written to %s" % path_all)
+	#place values/mask
+	tci_rgb = tci.copy()
+	tci_rgb[rgb_zeromask] = 255
 
-	#2.TCI - AND OF ZERO PIXELS SET TO MAX IN GREEN(correct masking)
+	#save
+	path_rgb = './fig/' + fname + '_ZERO_RGB.jp2'
+	with rio.open(path_rgb,'w',photometric='RGB',**kwargs) as dst:
+		dst.write(tci_rgb,indexes=[1,2,3])
+	print("TCI written to %s" % path_rgb)
+	del tci_rgb
+
+	# 4.TCI - AND OF ZERO PIXELS SET TO MAX IN RED (correct masking)
 	#-----------------------------------------------------------------
+	#place values/mask
 	tci_and = tci.copy()
 	tci_and[0,and_zeromask] = 255
 	tci_and[1,and_zeromask] = 0
 	tci_and[2,and_zeromask] = 0
+
+	#save
 	path_and = './fig/'+fname+'_ZERO_AND.jp2'
 	with rio.open(path_and,'w',photometric='RGB',**kwargs) as dst:
 		dst.write(tci_and,indexes=[1,2,3])
 	print("TCI written to %s" % path_and)
+	del tci_and
 
-	#3.TCI - HI (>10k) PIXELS SET TO MAX IN RED
+	# 5.TCI - HI (>10k) PIXELS SET TO MAX IN RED
 	#-----------------------------------------------------------------	
+	#place values/mask
 	tci_hi1 = tci.copy()
 	tci_hi1[0,esa_highmask] = 255
 	tci_hi1[1,esa_highmask] = 0
 	tci_hi1[2,esa_highmask] = 0
-	path_hi1 = './fig/'+fname+'_HIGH_ESA.jp2'
+
+	#save
+	path_hi1 = './fig/'+fname+'_HI_ESA.jp2'
 	with rio.open(path_hi1,'w',photometric='RGB',**kwargs) as dst:
 		dst.write(tci_hi1)
-
 	print("TCI written to %s" % path_hi1)
+	del tci_hi1
 
-
-	#3.TCI - HI (>99%) PIXELS SET TO MAX IN RED
+	# 6.TCI - HI (>99.9%) PIXELS SET TO 255 IN each
 	#-----------------------------------------------------------------	
+	# place values/mask
 	tci_hi2 = tci.copy()
 	tci_hi2[0,pct_highmask] = 255
 	tci_hi2[1,pct_highmask] = 0
 	tci_hi2[2,pct_highmask] = 0
-	path_hi2 = './fig/'+fname+'_HIGH_PCT.jp2'
+	path_hi2 = './fig/'+fname+'_HI_PCT.jp2'
 	with rio.open(path_hi2,'w',photometric='RGB',**kwargs) as dst:
 		dst.write(tci_hi2)
 	print("TCI written to %s" % path_hi2)
+	del tci_hi2
 
+	# 7.TCI - LOW(<0.01%) PIXELS SET TO 255 IN RED
+	#-----------------------------------------------------------------	
+	# place values/mask
+	tci_low = tci.copy()
+	tci_low[0,pct_lowmask] = 255
+	tci_low[1,pct_lowmask] = 0
+	tci_low[2,pct_lowmask] = 0
+	path_low = './fig/'+fname+'_LO_PCT.jp2'
+	with rio.open(path_low,'w',photometric='RGB',**kwargs) as dst:
+		dst.write(tci_low,indexes=[1,2,3])
+	print("TCI written to %s" % path_low)
+	del tci_low
+
+
+	# DELETE UNNECESSARY XML METADATA
 	for f in os.listdir('./fig'):
 		if f[-3:] == 'xml':
 			os.remove('./fig/'+f)
@@ -876,7 +916,7 @@ if __name__ == '__main__':
 	folders  = [d for d in os.listdir(DATA_DIR) if d[-5:]=='.SAFE']
 	
 	#A SINGLE FOLDER
-	safe_dir = folders[0]
+	safe_dir = folders[3]
 
 	#PARSE XML INFO
 	xml_file = [f for f in os.listdir(DATA_DIR+'/'+safe_dir) if f[-4:]=='.xml'][0] #bc MTD, MTD_L2A
@@ -905,7 +945,7 @@ if __name__ == '__main__':
 
 	print(safe_dir)
 	print("-"*80)
-	# plot_tci_masks(gee_id+'_TCI',[band2,band3,band4],quant_val,offsets[0:3],input_borders)
+	plot_tci_masks(gee_id+'_TCI',[band2,band3,band4],quant_val,offsets[0:3],input_borders)
 	# plot_checkerboard(gee_id+'_chk.tif',label,label_borders,label_windows)
 
 	# px_rows = input_borders['bottom'] + 1 - input_borders['top']
