@@ -43,17 +43,15 @@ CHIP_DIR  = DATA_DIR + '/chp'
 ####################################################################################################
 def minmax_normalize(img: ndarray, by_band: bool=True) -> ndarray:
 	"""
-	Unit-normalize a set of bands individually, or across all bands, using min and max values.
+	Normalize a set of bands individually, or across all bands, using min and max values.
 	
 	Parameters
 	----------
 	img: numpy.ndarray
 		A 1-band or 3-band raster image with the first axis being the bands.
 	by_band: bool
-		Boolean flag for the type of normalization. If false a single pair of 
-		min and max values for all bands is used to normalize all bands. If 
-		true, the min and max values in each band are used to normalize the 
-		corresponding bands.
+		Boolean flag. If false, a single pair of min and max values for all bands is used. If true, 
+		the min and max values in each band are used to normalize the corresponding bands.
 
 	Returns
 	-------
@@ -73,21 +71,21 @@ def minmax_normalize(img: ndarray, by_band: bool=True) -> ndarray:
 ####################################################################################################
 # HISTOGRAMS, ET CETERA
 ####################################################################################################
-def band_hist(path: str, band: ndarray, title: str, n_bins: int=4096) -> None:
+def band_hist(path: str, band: ndarray, title: str, color: str, n_bins: int=4096) -> None:
 	nonzeros = band[band!=0].flatten()
 	fig,ax = plt.subplots()
 	ax.set_title(title)
-	ax.hist(nonzeros,bins=n_bins)
+	ax.hist(nonzeros,bins=n_bins,histtype='bar',color=color)
 	plt.savefig(path)
 	print("Band plot saved to %s." % path)
 
-def multiband_hist(path: str, img: ndarray, title: str, subtitle: List[str], n_bins: int) -> None:
+def multiband_hist(path: str, bands: [ndarray], title: str, subtitle: List[str], n_bins: int) -> None:
 	colors = ['r','g','b','darkred']
-	fig, ax = plt.subplots(nrows=1,ncols=bands.shape[0],sharey=True,tight_layout=True)
+	fig, axs = plt.subplots(nrows=1,ncols=len(bands),sharey=True,tight_layout=True)
 	fig.suptitle(title)
-	for i in range(img.shape[0]):
-		ax[i].hist(img[i][img[i]!=0].flatten(),bins=n_bins)
-		ax[i].set_title(subtitle[i])
+	for i in range(len(bands)):
+		axs[i].hist(bands[i][bands[i]!=0].flatten(),bins=n_bins)
+		axs[i].set_title(subtitle[i])
 	plt.savefig(path)
 
 ####################################################################################################
@@ -588,9 +586,10 @@ def plot_checkerboard(path,dw_reader,borders,windows):
 # CHECK
 def folder_check():
 	'''
-	Do a folder check to remove any folder with bands if that folder does not have a matching .tif
+	Do a folder check to remove any .SAFE folder if that folder does not have a matching .tif
 	dynanmic world label.
 	'''
+
 	folders = [f for f in os.listdir(DATA_DIR) if f!='dynamicworld' and f[-5:]=='.SAFE']
 	for folder in folders:
 		# get xml
@@ -945,11 +944,11 @@ if __name__ == '__main__':
 
 	print(safe_dir)
 	print("-"*80)
-	plot_tci_masks(gee_id+'_TCI',[band2,band3,band4],quant_val,offsets[0:3],input_borders)
+	# plot_tci_masks(gee_id+'_TCI',[band2,band3,band4],quant_val,offsets[0:3],input_borders)
 	# plot_checkerboard(gee_id+'_chk.tif',label,label_borders,label_windows)
 
-	# px_rows = input_borders['bottom'] + 1 - input_borders['top']
-	# px_cols = input_borders['right'] + 1 - input_borders['left']
-	# w = Window(input_borders['left'],input_borders['top'],px_cols,px_rows)
+	px_rows = input_borders['bottom'] + 1 - input_borders['top']
+	px_cols = input_borders['right'] + 1 - input_borders['left']
+	w = Window(input_borders['left'],input_borders['top'],px_cols,px_rows)
 	# band2.read(1,window=w)
 	# band_hist(path, , "B02")
