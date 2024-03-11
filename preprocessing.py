@@ -8,16 +8,16 @@ import time
 import sys
 import rasterio as rio
 from rasterio.windows import Window
+import multiprocessing as mp
 
 ####################################################################################################
-# TYPING
+# GLOBAL
 ####################################################################################################
+#TYPING
 from typing import Tuple, List
 ndarray = np.ndarray #quick fix...
 
-####################################################################################################
-# GLOBAL VARIABLES
-####################################################################################################
+#XML NAMESPACEs
 ns = {
 	'n1':"https://psd-14.sentinel2.eo.esa.int/PSD/User_Product_Level-2A.xsd",
 	'other':"http://www.w3.org/2001/XMLSchema-instance",
@@ -25,7 +25,6 @@ ns = {
 	}
 
 plt.style.use('fast')
-
 
 CHIP_SIZE = 256
 WATER_MIN = 128*64
@@ -73,20 +72,23 @@ def minmax_normalize(img: ndarray, by_band: bool=True) -> ndarray:
 ####################################################################################################
 def band_hist(path: str, band: ndarray, title: str, color: str, n_bins: int=4096) -> None:
 	nonzeros = band[band!=0].flatten()
-	fig,ax = plt.subplots()
+	fig,ax = plt.subplots((10,10))
 	ax.set_title(title)
 	ax.hist(nonzeros,bins=n_bins,histtype='bar',color=color)
 	plt.savefig(path)
 	print("Band plot saved to %s." % path)
+	plt.close()
 
-def multiband_hist(path: str, bands: [ndarray], title: str, subtitle: List[str], n_bins: int) -> None:
-	colors = ['r','g','b','darkred']
+def multiband_hist(path: str, bands: [ndarray], title: str, n_bins: int=4096) -> None:
+	subtitle = ['Red','Green','Blue','NIR']
+	color    = ['r','g','b','darkred']
 	fig, axs = plt.subplots(nrows=1,ncols=len(bands),sharey=True,tight_layout=True)
 	fig.suptitle(title)
 	for i in range(len(bands)):
-		axs[i].hist(bands[i][bands[i]!=0].flatten(),bins=n_bins)
+		axs[i].hist(bands[i][bands[i]!=0].flatten(),bins=n_bins,histtype='bar',color=color[i])
 		axs[i].set_title(subtitle[i])
 	plt.savefig(path)
+	print("Multi-band plot saved to %s." % path)
 
 ####################################################################################################
 # PROCESSING STUFF
@@ -130,25 +132,7 @@ def parse_xml(path: str) -> Tuple[str, int, List[int]]:
 				.find('Granule_List')
 					.find('Granule').attrib['datastripIdentifier']
 
-
-	The structure of the the band quantification values inside the XML file 
-	looks like this
-
-	<Product_Image_Characteristics>
-		<QUANTIFICATION_VALUES LIST>
-			<BOA_QUANTIFICATION_VALUE>
-		<Reflectance_Conversion>
-		...
-
-	Hence it is parsed with
-
-	root.find('n1:General_Info',namespaces=ns)
-		.find('Product_Image_Characteristics')
-			.find('QUANTIFICATION_VALUES_LIST')
-				.find('BOA_QUANTIFICATION_VALUE')
-
-
-	And, the offsets look like this
+	The XML structure of the offsets looks like this
 
 	<Product_Image_Characteristics>
 		<QUANTIFICATION_VALUES LIST>
@@ -162,7 +146,7 @@ def parse_xml(path: str) -> Tuple[str, int, List[int]]:
 		<Reflectance_Conversion>
 		...
 
-	And so they are parsed, by iterating on the result of
+	So they are parsed, by iterating on the result of
 
 	root.find('n1:General_Info',namespaces=ns)
 		.find('Product_Image_Characteristics')
@@ -182,8 +166,8 @@ def parse_xml(path: str) -> Tuple[str, int, List[int]]:
 
 	# quantification values
 	prod_char = root.find('n1:General_Info',namespaces=ns).find('Product_Image_Characteristics')
-	boa_quant = prod_char.find('QUANTIFICATION_VALUES_LIST').find('BOA_QUANTIFICATION_VALUE')
-	quant_val = int(boa_quant.text)
+	# boa_quant = prod_char.find('QUANTIFICATION_VALUES_LIST').find('BOA_QUANTIFICATION_VALUE')
+	# quant_val = int(boa_quant.text)
 
 	# offset values
 	boa_add = prod_char.find('BOA_ADD_OFFSET_VALUES_LIST') #None | Element 
@@ -192,7 +176,7 @@ def parse_xml(path: str) -> Tuple[str, int, List[int]]:
 	else:
 		offsets = [0]*4
 
-	return datastrip,quant_val,offsets
+	return datastrip,offsets
 
 
 def get_gee_id(s2_id: str, datastrip: str) -> str:
@@ -589,60 +573,73 @@ def folder_check():
 	Do a folder check to remove any .SAFE folder if that folder does not have a matching .tif
 	dynanmic world label.
 	'''
-
 	folders = [f for f in os.listdir(DATA_DIR) if f!='dynamicworld' and f[-5:]=='.SAFE']
+
 	for folder in folders:
-		# get xml
-		xml_name = [f for f in os.listdir(DATA_DIR + id) if f[-4:]=='.xml'][0] #bc MTD, MTD_L2A
-		xml_path = '/'.join([DATA_DIR,folder,xml_filename])	
+		# empty folder, remove
+		if len(os.listdir(DATA_DIR+'/'+folder)) == 0:
+			print("Removing folder %s..." % folder)
+			os.rmdir(DATA_DIR+'/'+folder)
+			continue
+
+		# get xml, continue if no xml
+		try:
+			xml_name = [f for f in os.listdir(DATA_DIR+'/'+folder) if f[-4:]=='.xml'][0]
+			xml_path = '/'.join([DATA_DIR,folder,xml_name])
+		except IndexError:
+			print("Index error. No xml file in %s. Skipping." % folder)
+			continue
+		except Exception as err:
+			print('Other error retrieving xml file in %s. Skipping.' % folder)
+			print(err)
+			continue
 
 		# get dynarmicworld id
-		dstrip, _, _ = parse_xml(xml_path)
-		date         = folder[11:26]
-		tile         = folder[38:44]		
-		dw_id        = '_'.join([date,datastrip,tile])
+		dstrip,_ = parse_xml(xml_path)
+		date     = folder[11:26]
+		tile     = folder[38:44]
+		dw_id    = '_'.join([date,dstrip,tile])
 
 		#delete all scl's
 		scl_file = '_'.join([tile,date,'SCL','20m.jp2'])
 		scl_path = '/'.join([DATA_DIR,folder,scl_file])
 		if os.path.isfile(scl_path):
+			print("Deleting %s" % scl_path)
 			os.remove(scl_path)
 
 		#if dw...
 		if os.path.isfile(LABEL_DIR+'/'+dw_id+'.tif'):
 			# exists, check files in .SAFE
-			n_files = len(os.listdir(folder))
+			n_files = len(os.listdir(DATA_DIR + '/' + folder))
 			if n_files != 5:
 				print("Folder %s has <5 files." % folder) #in case we actually need to check
+			else:
+				print("Folder %s -- OK." % folder)
 		else:
 			# d.n.e, remove whole .SAFE dir
-			for file in os.listdir(folder):
+			print("Removing folder %s..." % folder)
+			for file in os.listdir(DATA_DIR+'/'+folder):
 				os.remove('/'.join([DATA_DIR,folder,file]))
-			os.rmdir(folder)
-
-			print("Folder %s removed." % folder)
+			os.rmdir(DATA_DIR+'/'+folder)
 
 #TODO
 def plot_label_singleclass_windowed():
 	pass
 
 #TODO
-def chip_image_cpu(img: ndarray, windows: List[Tuple]) -> ndarray:
-	"""
-	Parameters
-	----------
-	img: numpy.ndarray
-		Input raster image.
-	chp_size: int
-		The size of the chips. The resulting images will be of size chp_size x 
-		chp_size.
+def chip_image_cpu(path: str, windows: [Tuple]):
 
-	Returns
-	-------
-	result: numpy.ndarray
-		An array with dimensions (N,chp_size,chp_size) containing the resulting 
-		images, where N is the number of resulting chips from the image.
-	"""
+	#split windows into n_cpu arrays
+
+	#init n_cpu file readers
+	for i in range(mp.cpu_count):
+		rdr += [rio.open(path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)]
+	return
+
+	#throw a worker to each array
+
+
+def chip_image_cpu_worker(img: ndarray, windows: [Tuple]) -> None:
 	return
 
 #TODO
@@ -708,7 +705,7 @@ def process_product(id: str):
 	xml_path     = DATA_DIR + '/'.join([id,xml_filename])
 
 	#2.XML -> DW PATH, OFFSETS, QUANTIFICATION VALUE
-	datastrip, quantnr, offsets = parse_xml(xml_path)
+	datastrip, offsets = parse_xml(xml_path)
 	gee_id  = get_gee_id(id,datastrip)
 	dw_path = DATA_DIR + '/'.join([LABEL_DIR,gee_id]) + '.tif'
 
@@ -746,7 +743,7 @@ def plot_tci_windowed(dst_path,bands,borders,windows):
 	return True
 
 #TODO
-def plot_tci_masks(fname:str, bands:[rio.DatasetReader], quant:int, offsets:[int], borders: dict):
+def plot_tci_masks(fname:str, bands:[rio.DatasetReader], offsets:[int], borders: dict):
 	'''
 	Plot whole rgb image with the nodata borders removed.
 	'''
@@ -766,7 +763,7 @@ def plot_tci_masks(fname:str, bands:[rio.DatasetReader], quant:int, offsets:[int
 
 	#Stack bands
 	b,g,r = (_.read(1,window=w) for _ in bands)
-	tci   = np.stack([r,g,b],axis=0).clip(0,32767).astype(np.int16) #[-32767,32767]
+	tci   = np.stack([r,g,b],axis=0).clip(0,32767).astype(np.int16) #int16 in [-32767,32767]
 
 	# nodata
 	rgb_zeromask = tci == 0
@@ -783,9 +780,30 @@ def plot_tci_masks(fname:str, bands:[rio.DatasetReader], quant:int, offsets:[int
 	pct_lowmask  = (tci < pctiles_01.reshape((3,1,1))).any(axis=0) #OR mask
 	print("Percentiles set to (RGB): %s,%s" % (str(pctiles_99),str(pctiles_01)))
 
+	#Plot hist as is
+	hist_path  = '_'.join(['./fig/'+fname[0:-4],'hist','0.jp2'])
+	hist_title = "Red band unaltered"
+	band_hist(path=hist_path,band=tci[0],title=hist_title,color='red') 
+
+	#plot hist as is, normalized to unit
+	hist_path  = '_'.join(['./fig/'+fname[0:-4],'hist','1.jp2'])
+	hist_title = "Red band normalized -- [0,1]"
+	band_hist(hist_path,minmax_normalize(tci[0]),hist_title,'red') #<------ check sum of zeros is the same as sum of rgb_zeromask
+
+	# check how placing 0,1 range into 255 looks
+	hist_path  = '_'.join(['./fig/'+fname[0:-4],'hist','2.jp2'])
+	hist_title = "Red band normalized -- [0,255]"
+	band_hist(hist_path,minmax_normalize(tci[0])*254+1,hist_title,'red')
+
 	# 0.TCI
 	#-----------------------------------------------------------------
 	tci_raw = (minmax_normalize(tci,by_band=True)*255).astype(np.uint8)
+
+	#
+	hist_path  = '_'.join(['./fig/'+fname[0:-4],'hist','3.jp2'])
+	hist_title = "Red band normalized -- [0,255]"
+	band_hist(path=hist_path,band=tci[0],title=hist_title,color='red')
+
 	path = './fig/' + fname + '.jp2'
 	with rio.open(path,'w',photometric='RGB',**kwargs) as dst:
 		dst.write(tci_raw,indexes=[1,2,3])
@@ -903,7 +921,7 @@ def plot_tci_masks(fname:str, bands:[rio.DatasetReader], quant:int, offsets:[int
 			os.remove('./fig/'+f)
 
 #TODO
-def save_tci_window(path,bands,quant_val,offsets,window):
+def save_tci_window(path,bands,offsets,window):
 	return
 ####################################################################################################
 # MAIN
@@ -915,40 +933,36 @@ if __name__ == '__main__':
 	folders  = [d for d in os.listdir(DATA_DIR) if d[-5:]=='.SAFE']
 	
 	#A SINGLE FOLDER
-	safe_dir = folders[3]
+	# safe_dir = folders[0]
 
-	#PARSE XML INFO
-	xml_file = [f for f in os.listdir(DATA_DIR+'/'+safe_dir) if f[-4:]=='.xml'][0] #bc MTD, MTD_L2A
-	xml_path = '/'.join([DATA_DIR,safe_dir,xml_file])
-	datastrip,quant_val,offsets = parse_xml(xml_path)
+	# #PARSE XML INFO
+	# xml_file = [f for f in os.listdir(DATA_DIR+'/'+safe_dir) if f[-4:]=='.xml'][0] #bc MTD, MTD_L2A
+	# xml_path = '/'.join([DATA_DIR,safe_dir,xml_file])
+	# datastrip,offsets = parse_xml(xml_path)
 
-	#GET FILE PATHS
-	gee_id = get_gee_id(safe_dir,datastrip)
-	label_path = LABEL_DIR + '/' + gee_id + '.tif'
-	band_fname = get_band_filenames(safe_dir,['B02','B03','B04','B08'])
-	band_path  = ['/'.join([DATA_DIR,safe_dir,_]) for _ in band_fname]
+	# #GET FILE PATHS
+	# gee_id = get_gee_id(safe_dir,datastrip)
+	# label_path = LABEL_DIR + '/' + gee_id + '.tif'
+	# band_fname = get_band_filenames(safe_dir,['B02','B03','B04','B08'])
+	# band_path  = ['/'.join([DATA_DIR,safe_dir,_]) for _ in band_fname]
 
-	label = rio.open(label_path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
-	band2 = rio.open(band_path[0],'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
-	band3 = rio.open(band_path[1],'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
-	band4 = rio.open(band_path[2],'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
-	band8 = rio.open(band_path[3],'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+	# label = rio.open(label_path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+	# band2 = rio.open(band_path[0],'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+	# band3 = rio.open(band_path[1],'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+	# band4 = rio.open(band_path[2],'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+	# band8 = rio.open(band_path[3],'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
 	
-	#EQUATE LABEL PIXEL BORDERS
-	label_borders = remove_borders(label)
-	input_borders = convert_bounds(label,band2,label_borders)
+	# #EQUATE LABEL PIXEL BORDERS
+	# label_borders = remove_borders(label)
+	# input_borders = convert_bounds(label,band2,label_borders)
 
-	#WINDOWS TO READ
-	input_windows = get_windows(input_borders)
-	label_windows = get_windows(label_borders)
+	# #WINDOWS TO READ
+	# input_windows = get_windows(input_borders)
+	# label_windows = get_windows(label_borders)
 
-	print(safe_dir)
-	print("-"*80)
-	# plot_tci_masks(gee_id+'_TCI',[band2,band3,band4],quant_val,offsets[0:3],input_borders)
+	# print(safe_dir)
+	# print("-"*80)
+
+	folder_check()
+	# plot_tci_masks(gee_id+'_TCI',[band2,band3,band4],offsets[0:3],input_borders)
 	# plot_checkerboard(gee_id+'_chk.tif',label,label_borders,label_windows)
-
-	px_rows = input_borders['bottom'] + 1 - input_borders['top']
-	px_cols = input_borders['right'] + 1 - input_borders['left']
-	w = Window(input_borders['left'],input_borders['top'],px_cols,px_rows)
-	# band2.read(1,window=w)
-	# band_hist(path, , "B02")
