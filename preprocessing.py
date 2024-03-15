@@ -717,38 +717,42 @@ def save_tci_window(path,bands,offsets,window):
 	return
 
 #TODO
-def plot_histograms(fname:str, bands:[rio.DatasetReader], offsets:[int], borders: dict) -> None:
-	n_bins = 4096
-	#Full image minus no-data borders
+def check_histograms(fname:str, band:rio.DatasetReader, offset:int, borders: dict) -> None:
+	n_bins = 2048
+
+	#Remove no-data borders
 	px_rows = borders['bottom'] + 1 - borders['top']
 	px_cols = borders['right'] + 1 - borders['left']
-	w       = Window(borders['left'],borders['top'],px_cols,px_rows)	
-	red     = bands[2].read(1,window=w).astype(np.int16)
+
+	#Read
+	w   = Window(borders['left'],borders['top'],px_cols,px_rows)	
+	red = band.read(1,window=w).astype(np.int16)
 
 	zero_mask = red == 0
 	pctile_99 = np.percentile(red[~zero_mask],99)
 	pctile_01 = np.percentile(red[~zero_mask],1)
+	print("Bottom percentile: %.3f\nTop percentile: %.3f" % (pctile_01,pctile_99))
 
-	# HIST 0
+
+	# HIST 0 -- RAW
 	hist_path  = '_'.join(['./fig/'+fname,'hist','0.png'])
-	hist_title = "Red band original"
-	# band_hist(path=hist_path,band=red,title=hist_title,color='red') 	
 	fig,ax = plt.subplots()
-	ax.set_title(hist_title)
-	ax.hist(red[~zero_mask].flatten(),bins=,histtype='bar',color=color)
-	plt.savefig(path)
+	ax.set_title("Red band original")
+	ax.hist(red[~zero_mask].flatten(),bins=n_bins,histtype='bar',color='red')
+	ax.axvline(pctile_99,color='black',linewidth=0.5)
+	plt.savefig(hist_path)
 	print("Band plot saved to %s." % hist_path)
 	plt.close()
 
 	# HIST 1
-	hist_path  = '_'.join(['./fig/'+fname,'hist','1.png'])
-	hist_title = "Red band normalized -- [0,1]"
-	band_hist(hist_path,minmax_normalize(tci[0]),hist_title,'red') #<------ check sum of zeros is the same as sum of rgb_zeromask
+	# hist_path  = '_'.join(['./fig/'+fname,'hist','1.png'])
+	# hist_title = "Red band normalized -- [0,1]"
+	# band_hist(hist_path,minmax_normalize(tci[0]),hist_title,'red') #<------ check sum of zeros is the same as sum of rgb_zeromask
 
 	# HIST 2
-	hist_path  = '_'.join(['./fig/'+fname[0:-4],'hist','2.png'])
-	hist_title = "Red band normalized -- [0,255]"
-	band_hist(hist_path,minmax_normalize(tci[0])*254+1,hist_title,'red')
+	# hist_path  = '_'.join(['./fig/'+fname[0:-4],'hist','2.png'])
+	# hist_title = "Red band normalized -- [0,255]"
+	# band_hist(hist_path,minmax_normalize(tci[0])*254+1,hist_title,'red')
 
 #TODO
 def plot_tci_masks(fname:str, bands:[rio.DatasetReader], offsets:[int], borders: dict) -> None:
@@ -950,7 +954,7 @@ def process_product(safe_dir: str):
 	pass	
 
 	# plot_tci_masks(gee_id+'_TCI',[band2,band3,band4],offsets[0:3],input_borders)
-	plot_histograms()
+	check_histograms(gee_id,band2,offsets[2],input_borders)
 
 ####################################################################################################
 # MAIN
