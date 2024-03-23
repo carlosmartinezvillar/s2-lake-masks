@@ -734,11 +734,10 @@ def check_histograms(fname:str, band:rio.DatasetReader, offset:int, borders: dic
 	pctile_01 = np.percentile(red[~zero_mask],1)
 	print("Bottom percentile: %.3f\nTop percentile: %.3f" % (pctile_01,pctile_99))
 
-
 	# HIST 0 -- RAW
 	hist_path  = '_'.join(['./fig/'+fname,'hist','0.png'])
 	fig,ax = plt.subplots(figsize=(800*px_plt,600*px_plt))
-	ax.set_title("Red band original")
+	ax.set_title("Red band -- original")
 	ax.hist(red[~zero_mask].flatten(),bins=n_bins,histtype='bar',color='red')
 	ax.axvline(pctile_99,color='black',linewidth=0.5)
 	ax.set_ylim(0,500000)
@@ -747,9 +746,13 @@ def check_histograms(fname:str, band:rio.DatasetReader, offset:int, borders: dic
 	plt.close()
 
 	# HIST 1
+	nonzero_min = red[~zero_mask].min()
+	nonzero_max = red[~zero_mask].max()
+	new_img     = 
 	hist_path = '_'.join(['./fig/'+fname,'hist','1.png'])
 	fig,ax    = plt.subplots(figsize=(800*px_plt,600*px_plt))
-	ax.set_title
+	ax.set_title("Red band -- normalized to [0,1]")
+
 	# band_hist(hist_path,minmax_normalize(tci[0]),hist_title,'red') #<------ check sum of zeros is the same as sum of rgb_zeromask
 
 	# HIST 2
