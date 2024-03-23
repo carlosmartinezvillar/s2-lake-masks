@@ -755,6 +755,7 @@ def check_histograms(fname:str, band:rio.DatasetReader, offset:int, borders: dic
 
 	# band_hist(hist_path,minmax_normalize(tci[0]),hist_title,'red') #<------ check sum of zeros is the same as sum of rgb_zeromask
 
+
 	# HIST 2
 	# hist_path  = '_'.join(['./fig/'+fname[0:-4],'hist','2.png'])
 	# hist_title = "Red band normalized -- [0,255]"
