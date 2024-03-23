@@ -719,6 +719,7 @@ def save_tci_window(path,bands,offsets,window):
 #TODO
 def check_histograms(fname:str, band:rio.DatasetReader, offset:int, borders: dict) -> None:
 	n_bins = 2048
+	px_plt = 1/plt.rcParams['figure.dpi']
 
 	#Remove no-data borders
 	px_rows = borders['bottom'] + 1 - borders['top']
@@ -736,17 +737,19 @@ def check_histograms(fname:str, band:rio.DatasetReader, offset:int, borders: dic
 
 	# HIST 0 -- RAW
 	hist_path  = '_'.join(['./fig/'+fname,'hist','0.png'])
-	fig,ax = plt.subplots()
+	fig,ax = plt.subplots(figsize=(800*px_plt,600*px_plt))
 	ax.set_title("Red band original")
 	ax.hist(red[~zero_mask].flatten(),bins=n_bins,histtype='bar',color='red')
 	ax.axvline(pctile_99,color='black',linewidth=0.5)
+	ax.set_ylim(0,500000)
 	plt.savefig(hist_path)
 	print("Band plot saved to %s." % hist_path)
 	plt.close()
 
 	# HIST 1
-	# hist_path  = '_'.join(['./fig/'+fname,'hist','1.png'])
-	# hist_title = "Red band normalized -- [0,1]"
+	hist_path = '_'.join(['./fig/'+fname,'hist','1.png'])
+	fig,ax    = plt.subplots(figsize=(800*px_plt,600*px_plt))
+	ax.set_title
 	# band_hist(hist_path,minmax_normalize(tci[0]),hist_title,'red') #<------ check sum of zeros is the same as sum of rgb_zeromask
 
 	# HIST 2
