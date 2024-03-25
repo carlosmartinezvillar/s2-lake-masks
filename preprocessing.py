@@ -718,8 +718,10 @@ def save_tci_window(path,bands,offsets,window):
 
 #TODO
 def check_histograms(fname:str, band:rio.DatasetReader, offset:int, borders: dict) -> None:
+	#plot params
 	n_bins = 2048
 	px_plt = 1/plt.rcParams['figure.dpi']
+	H,W     = 600*px_plt,800*px_plt
 
 	#Remove no-data borders
 	px_rows = borders['bottom'] + 1 - borders['top']
@@ -729,40 +731,43 @@ def check_histograms(fname:str, band:rio.DatasetReader, offset:int, borders: dic
 	w   = Window(borders['left'],borders['top'],px_cols,px_rows)	
 	red = band.read(1,window=w).astype(np.int16)
 
+	#Zeroes, percentiles
 	zero_mask = red == 0
 	pctile_99 = np.percentile(red[~zero_mask],99)
 	pctile_01 = np.percentile(red[~zero_mask],1)
-	print("Bottom percentile: %.3f\nTop percentile: %.3f" % (pctile_01,pctile_99))
+	print("Bot percentile: %.3f\nTop percentile: %.3f" % (pctile_01,pctile_99))
 
 	# HIST 0 -- RAW
 	hist_path  = '_'.join(['./fig/'+fname,'hist','0.png'])
-	fig,ax = plt.subplots(figsize=(800*px_plt,600*px_plt))
+	fig,ax = plt.subplots(figsize=(W,H))
 	ax.set_title("Red band -- original")
-	ax.hist(red[~zero_mask].flatten(),bins=n_bins,histtype='bar',color='red')
-	ax
-
-	.axvline(pctile_99,color='black',linewidth=0.5)
-	ax.set_ylim(0,500000)
+	ax.hist(red[~zero_mask],bins=n_bins,histtype='bar',color='red')
+	ax.axvline(pctile_99,color='black',linewidth=0.5,linestyle='--')
+	# ax.set_ylim(0,500000)
 	plt.savefig(hist_path)
 	print("Band plot saved to %s." % hist_path)
 	plt.close()
 
-	# HIST 1
+	# HIST 1 -- normalized to 0,1
 	nonzero_min = red[~zero_mask].min()
 	nonzero_max = red[~zero_mask].max()
 	new_img     = (red[~zero_mask] - nonzero_min)/(nonzero_max-nonzero_min)
 	hist_path = '_'.join(['./fig/'+fname,'hist','1.png'])
-	fig,ax    = plt.subplots(figsize=(800*px_plt,600*px_plt))
+	fig,ax    = plt.subplots(figsize=(W,H))
 	ax.set_title("Red band -- normalized to [0,1]")
+	ax.hist(new_img,bins=n_bins,histtype='bar',color='red')
+	# ax.set_ylim(0,500000)
+	plt.savefig(hist_path)
+	print("Band plot saved to %s." % hist_path)
+	plt.close()
 
-	# band_hist(hist_path,minmax_normalize(tci[0]),hist_title,'red') #<------ check sum of zeros is the same as sum of rgb_zeromask
-
-
-
-	# HIST 2
-	# hist_path  = '_'.join(['./fig/'+fname[0:-4],'hist','2.png'])
-	# hist_title = "Red band normalized -- [0,255]"
+	# HIST 2 -- binned to 255
+	hist_path  = '_'.join(['./fig/'+fname,'hist','2.png'])
+	hist_title = "Red band normalized -- [0,255]"
 	# band_hist(hist_path,minmax_normalize(tci[0])*254+1,hist_title,'red')
+
+	#HIST 3 -- clipped normed binned
+	
 
 #TODO
 def plot_tci_masks(fname:str, bands:[rio.DatasetReader], offsets:[int], borders: dict) -> None:
@@ -934,14 +939,13 @@ def process_product(safe_dir: str):
 	#1.ID -> BAND PATHS, XML PATH
 	band_filename = get_band_filenames(safe_dir,['B02','B03','B04','B08'])
 	band_paths    = [DATA_DIR+'/'+safe_dir+'/'+_  for _ in band_filename]
-
-	xml_filename = [f for f in os.listdir(DATA_DIR + '/' + safe_dir) if f[-4:]=='.xml'][0] #bc MTD, MTD_L2A
-	xml_path     = DATA_DIR + '/' + '/'.join([safe_dir,xml_filename])
+	xml_filename  = [f for f in os.listdir(DATA_DIR+'/'+safe_dir) if f[-4:]=='.xml'][0] #bc MTD/MTD_L2A
+	xml_path      = DATA_DIR + '/' + '/'.join([safe_dir,xml_filename])
 
 	#2.XML -> DW PATH, OFFSETS, QUANTIFICATION VALUE
-	datastrip, offsets = parse_xml(xml_path)
-	gee_id  = get_gee_id(safe_dir,datastrip)
-	label_path = '/'.join([LABEL_DIR,gee_id]) + '.tif'
+	datastrip,offsets = parse_xml(xml_path)
+	gee_id            = get_gee_id(safe_dir,datastrip)
+	label_path        = '/'.join([LABEL_DIR,gee_id]) + '.tif'
 
 	#3.BAND PATHS, DW PATH -> DatasetReader x 5
 	label = rio.open(label_path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
@@ -960,11 +964,14 @@ def process_product(safe_dir: str):
 	input_windows = get_windows(input_borders)
 	label_windows = get_windows(label_borders)
 
-	#7.ITERATE THROUGH WINDOWS
-	pass	
 
+	#7.DO SOME CHECKs
 	# plot_tci_masks(gee_id+'_TCI',[band2,band3,band4],offsets[0:3],input_borders)
 	check_histograms(gee_id,band2,offsets[2],input_borders)
+
+	#8.ITERATE THROUGH WINDOWS
+	pass	
+
 
 ####################################################################################################
 # MAIN
@@ -974,11 +981,7 @@ if __name__ == '__main__':
 
 	#.SAFE folders in data directory
 	folders  = [d for d in os.listdir(DATA_DIR) if d[-5:]=='.SAFE']
-	
-	#A SINGLE FOLDER
-	safe_dir = folders[0]
+	safe_dir = folders[2]
 
-	process_product(safe_dir)
-	# folder_check()
-
+	process_product(safe_dir)	
 	# plot_checkerboard(gee_id+'_chk.tif',label,label_borders,label_windows)
