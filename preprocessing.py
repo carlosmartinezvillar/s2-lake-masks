@@ -735,39 +735,50 @@ def check_histograms(fname:str, band:rio.DatasetReader, offset:int, borders: dic
 	zero_mask = red == 0
 	pctile_99 = np.percentile(red[~zero_mask],99)
 	pctile_01 = np.percentile(red[~zero_mask],1)
-	print("Bot percentile: %.3f\nTop percentile: %.3f" % (pctile_01,pctile_99))
+	print("Bot percentile: %i" % pctile_01)
+	print("Top percentile: %i" % pctile_99)
 
-	# HIST 0 -- RAW
+	#normalize
+	nonzero_min = red[~zero_mask].min()
+	nonzero_max = red[~zero_mask].max()
+	red_normed  = (red[~zero_mask]-1)/(nonzero_max-1)
+
+	print("Min: %i" % nonzero_min)
+	print("Max: %i" % nonzero_max)
+
+	# ADD OFFSETS?
+
+	# # HIST 0 -- RAW
 	hist_path  = '_'.join(['./fig/'+fname,'hist','0.png'])
 	fig,ax = plt.subplots(figsize=(W,H))
 	ax.set_title("Red band -- original")
 	ax.hist(red[~zero_mask],bins=n_bins,histtype='bar',color='red')
-	ax.axvline(pctile_99,color='black',linewidth=0.5,linestyle='--')
+	ax.axvline(pctile_99,color='black',linewidth=0.4,linestyle='--')
+	ax.axvline(pctile_01,color='black',linewidth=0.4)
 	# ax.set_ylim(0,500000)
 	plt.savefig(hist_path)
 	print("Band plot saved to %s." % hist_path)
 	plt.close()
 
-	# HIST 1 -- normalized to 0,1
-	nonzero_min = red[~zero_mask].min()
-	nonzero_max = red[~zero_mask].max()
-	new_img     = (red[~zero_mask] - nonzero_min)/(nonzero_max-nonzero_min)
+	# HIST 1 -- normalized to [0,1] * 255
 	hist_path = '_'.join(['./fig/'+fname,'hist','1.png'])
 	fig,ax    = plt.subplots(figsize=(W,H))
-	ax.set_title("Red band -- normalized to [0,1]")
-	ax.hist(new_img,bins=n_bins,histtype='bar',color='red')
-	# ax.set_ylim(0,500000)
-	plt.savefig(hist_path)
-	print("Band plot saved to %s." % hist_path)
-	plt.close()
+	ax.set_title("Red band -- [0,1]*255")
+	# ax.hist(red_normed*254,bins=n_bins,histtype='bar',color='red')
+	# # ax.set_ylim(0,500000)
+	# plt.savefig(hist_path)
+	# print("Band plot saved to %s." % hist_path)
+	# plt.close()
 
 	# HIST 2 -- binned to 255
-	hist_path  = '_'.join(['./fig/'+fname,'hist','2.png'])
-	hist_title = "Red band normalized -- [0,255]"
+	# hist_path  = '_'.join(['./fig/'+fname,'hist','2.png'])
+	# fig,ax     = plt.subplots(figsize=(W,H))
+	# ax.set_title("Red band normalized -- [0,255]")
+	# ax.hist((new_img*255).astype(np.uint8))
 	# band_hist(hist_path,minmax_normalize(tci[0])*254+1,hist_title,'red')
 
 	#HIST 3 -- clipped normed binned
-	
+
 
 #TODO
 def plot_tci_masks(fname:str, bands:[rio.DatasetReader], offsets:[int], borders: dict) -> None:
@@ -798,7 +809,7 @@ def plot_tci_masks(fname:str, bands:[rio.DatasetReader], offsets:[int], borders:
 	esa_highmask = (tci >= 11000).any(axis=0) #OR thru axis 0
 
 	# add offsets
-	tci          = tci + np.array(offsets).reshape((3,1,1))
+	# tci          = tci + np.array(offsets).reshape((3,1,1))
 
 	#calculate percentiles and get masks for them
 	pctiles_99 = np.array([np.percentile(b[~rgb_zeromask[i]],99.9) for i,b in enumerate(tci)])
@@ -964,10 +975,9 @@ def process_product(safe_dir: str):
 	input_windows = get_windows(input_borders)
 	label_windows = get_windows(label_borders)
 
-
 	#7.DO SOME CHECKs
-	# plot_tci_masks(gee_id+'_TCI',[band2,band3,band4],offsets[0:3],input_borders)
 	check_histograms(gee_id,band2,offsets[2],input_borders)
+	# plot_tci_masks(gee_id+'_TCI',[band2,band3,band4],offsets[0:3],input_borders)
 
 	#8.ITERATE THROUGH WINDOWS
 	pass	
@@ -981,7 +991,8 @@ if __name__ == '__main__':
 
 	#.SAFE folders in data directory
 	folders  = [d for d in os.listdir(DATA_DIR) if d[-5:]=='.SAFE']
-	safe_dir = folders[2]
+	# safe_dir = folders[2]
 
-	process_product(safe_dir)	
+	for safe_dir in folders:
+		process_product(safe_dir)	
 	# plot_checkerboard(gee_id+'_chk.tif',label,label_borders,label_windows)
