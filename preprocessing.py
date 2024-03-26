@@ -733,6 +733,7 @@ def check_histograms(fname:str, band:rio.DatasetReader, offset:int, borders: dic
 
 	#Zeroes, percentiles
 	zero_mask = red == 0
+	red       = red + offset
 	pctile_99 = np.percentile(red[~zero_mask],99)
 	pctile_01 = np.percentile(red[~zero_mask],1)
 	print("Bot percentile: %i" % pctile_01)
@@ -740,45 +741,48 @@ def check_histograms(fname:str, band:rio.DatasetReader, offset:int, borders: dic
 
 	#normalize
 	nonzero_min = red[~zero_mask].min()
-	nonzero_max = red[~zero_mask].max()
-	red_normed  = (red[~zero_mask]-1)/(nonzero_max-1)
+	nonzero_max = red.max()
 
 	print("Min: %i" % nonzero_min)
 	print("Max: %i" % nonzero_max)
-
-	# ADD OFFSETS?
 
 	# # HIST 0 -- RAW
 	hist_path  = '_'.join(['./fig/'+fname,'hist','0.png'])
 	fig,ax = plt.subplots(figsize=(W,H))
 	ax.set_title("Red band -- original")
 	ax.hist(red[~zero_mask],bins=n_bins,histtype='bar',color='red')
-	ax.axvline(pctile_99,color='black',linewidth=0.4,linestyle='--')
+	ax.axvline(pctile_99,color='black',linewidth=0.4)
 	ax.axvline(pctile_01,color='black',linewidth=0.4)
+	ax.axvline(1000+offset,color='blue',linewidth=0.4,linestyle='--')	
 	# ax.set_ylim(0,500000)
 	plt.savefig(hist_path)
-	print("Band plot saved to %s." % hist_path)
+	print("Band histogram saved to %s." % hist_path)
 	plt.close()
 
-	# HIST 1 -- normalized to [0,1] * 255
+	# HIST 1 -- normalized to [0,1]*255
+	red_normed  = (red[~zero_mask]-(1+offset))/(nonzero_max-(1+offset))
+	this_array = (red_normed*255).round().astype(np.uint8)
 	hist_path = '_'.join(['./fig/'+fname,'hist','1.png'])
 	fig,ax    = plt.subplots(figsize=(W,H))
-	ax.set_title("Red band -- [0,1]*255")
-	# ax.hist(red_normed*254,bins=n_bins,histtype='bar',color='red')
+	ax.set_title("Red band -- scaled to [0,1]*255")
+	ax.hist(this_array,bins=255,histtype='bar',color='red')
 	# # ax.set_ylim(0,500000)
-	# plt.savefig(hist_path)
-	# print("Band plot saved to %s." % hist_path)
-	# plt.close()
+	ax.axvline(np.percentile(this_array,99),color='black',linewidth=0.4)
+	plt.savefig(hist_path)
+	print("Band histogram saved to %s." % hist_path)
+	plt.close()
 
-	# HIST 2 -- binned to 255
-	# hist_path  = '_'.join(['./fig/'+fname,'hist','2.png'])
-	# fig,ax     = plt.subplots(figsize=(W,H))
-	# ax.set_title("Red band normalized -- [0,255]")
-	# ax.hist((new_img*255).astype(np.uint8))
-	# band_hist(hist_path,minmax_normalize(tci[0])*254+1,hist_title,'red')
 
-	#HIST 3 -- clipped normed binned
-
+	#HIST 2 -- clipped normed binned
+	this_array = (np.clip(red[~zero_mask],1,pctile_99)-1)/(pctile_99-1)
+	# this_array = (np.clip(red_normed,0,0.99)/(0.99) * 255).round().astype(np.uint8)
+	this_array = (this_array * 255).round().astype(np.uint8)
+	hist_path  = '_'.join(['./fig/'+fname,'hist','2.png'])
+	fig,ax     = plt.subplots(figsize=(W,H))
+	ax.set_title("Red band -- shifted, clipped, scaled, and binned")
+	ax.hist(this_array,bins=255,histtype='bar',color='red')
+	plt.savefig(hist_path)
+	print("Band histogram saved to %s." % hist_path)
 
 #TODO
 def plot_tci_masks(fname:str, bands:[rio.DatasetReader], offsets:[int], borders: dict) -> None:
@@ -944,7 +948,7 @@ def process_product(safe_dir: str):
 	'''
 	Process a .SAFE folder.
 	'''
-	print("Processing %s" % safe_dir)
+	print("\nProcessing %s" % safe_dir)
 	print("-"*80)
 
 	#1.ID -> BAND PATHS, XML PATH
