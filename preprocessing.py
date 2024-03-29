@@ -985,7 +985,10 @@ def process_product(safe_dir: str):
 
 	#8.ITERATE THROUGH WINDOWS
 	pass	
-
+	#FINAL ID should be: 
+	'''
+	DATE_DSTRIP_ROTATION_TILE_ROW_COL
+	'''
 
 ####################################################################################################
 # MAIN
