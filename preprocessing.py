@@ -576,6 +576,7 @@ def folder_check():
 	'''
 	folders = [f for f in os.listdir(DATA_DIR) if f!='dynamicworld' and f[-5:]=='.SAFE']
 	n_input, n_label = 0,0
+	removed_folders = []
 
 	for folder in folders:
 		# empty folder, remove
@@ -621,10 +622,15 @@ def folder_check():
 				n_label += 1
 		else:
 			# d.n.e, remove whole .SAFE dir
-			print("Removing folder %s..." % folder)
+			print("--> Removing folder %s" % folder)
 			for file in os.listdir(DATA_DIR+'/'+folder):
 				os.remove('/'.join([DATA_DIR,folder,file]))
 			os.rmdir(DATA_DIR+'/'+folder)
+			removed_folders.append(folder)
+
+	print("%i REMOVED:" % len(removed_folders))
+	for rf in removed_folders:
+		print(rf)
 
 #TODO
 def plot_label_singleclass_windowed():
@@ -999,6 +1005,9 @@ if __name__ == '__main__':
 	#.SAFE folders in data directory
 	folders  = [d for d in os.listdir(DATA_DIR) if d[-5:]=='.SAFE']
 	# safe_dir = folders[2]
+
+	band2_2 = rio.open('./dat/S2A_MSIL2A_20220210T184521_N0400_R070_T10SGJ_20220210T214135.SAFE/T10SGJ_20220210T184521_B02_10m.jp2','r')
+	band2_5 = rio.open('./dat/S2A_MSIL2A_20220210T184521_N0400_R070_T11SKD_20220210T214135.SAFE/T11SKD_20220210T184521_B02_10m.jp2','r')
 
 	for safe_dir in folders:
 		process_product(safe_dir)	
