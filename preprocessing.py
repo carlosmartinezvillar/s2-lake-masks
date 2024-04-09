@@ -71,7 +71,7 @@ def minmax_normalize(img: ndarray, by_band: bool=True) -> ndarray:
 ####################################################################################################
 # HISTOGRAMS, ET CETERA
 ####################################################################################################
-def band_hist(path: str, band: ndarray, title: str, color: str, n_bins: int=4096) -> None:
+def band_hist(path: str, band: ndarray, title: str, n_bins: int=4096, color: str='blue') -> None:
 	nonzeros = band[band!=0].flatten()
 	fig,ax = plt.subplots()
 	ax.set_title(title)
@@ -79,6 +79,7 @@ def band_hist(path: str, band: ndarray, title: str, color: str, n_bins: int=4096
 	plt.savefig(path)
 	print("Band plot saved to %s." % path)
 	plt.close()
+
 
 def multiband_hist(path: str, bands: [ndarray], title: str, n_bins: int=4096) -> None:
 	subtitle = ['Red','Green','Blue','NIR']
@@ -180,7 +181,16 @@ def parse_xml(path: str) -> Tuple[str, int, List[int]]:
 	return datastrip,offsets
 
 
-def get_gee_id(s2_id: str, datastrip: str) -> str:
+def get_gee_id(s2_id: str) -> str:
+	xml_name    = [f for f in os.listdir(DATA_DIR+'/'+s2_id) if f[-4:]=='.xml'][0]
+	xml_path    = DATA_DIR + '/' + '/'.join([s2_id,xml_name])
+	datastrip,_ = parse_xml(xml_path)
+	date,tile   = s2_id.split('_')[2:6:3]
+	gee_id      = '_'.join([date,datastrip,tile])
+	return gee_id
+
+
+def join_gee_str(s2_id: str, datastrip: str) -> str:
 	'''
 	Read a Sentinel-2 id string, and return the DynamicWorld id.
 	'''
@@ -371,6 +381,70 @@ def get_windows(borders: dict) -> [Tuple]:
 	return windows
 
 
+def folder_check():
+	'''
+	Do a folder check to remove any .SAFE folder if that folder does not have a matching .tif
+	dynanmic world label.
+	'''
+	folders = [f for f in os.listdir(DATA_DIR) if f!='dynamicworld' and f[-5:]=='.SAFE']
+	n_input, n_label = 0,0
+	removed_folders = []
+
+	for folder in folders:
+		# empty folder, remove
+		if len(os.listdir(DATA_DIR+'/'+folder)) == 0:
+			print("Empty folder %s" % folder)
+			# os.rmdir(DATA_DIR+'/'+folder)
+			continue
+
+		# get xml, continue if no xml
+		try:
+			xml_name = [f for f in os.listdir(DATA_DIR+'/'+folder) if f[-4:]=='.xml'][0]
+			xml_path = '/'.join([DATA_DIR,folder,xml_name])
+		except IndexError:
+			print("Index error. No xml file in %s. Skipping." % folder)
+			continue
+		except Exception as err:
+			print('Other error retrieving xml file in %s. Skipping.' % folder)
+			print(err)
+			continue
+
+		# get dynarmicworld id
+		dstrip,_ = parse_xml(xml_path)
+		date     = folder[11:26]
+		tile     = folder[38:44]
+		dw_id    = '_'.join([date,dstrip,tile])
+
+		#delete all scl's
+		scl_file = '_'.join([tile,date,'SCL','20m.jp2'])
+		scl_path = '/'.join([DATA_DIR,folder,scl_file])
+		if os.path.isfile(scl_path):
+			print("Deleting %s" % scl_path)
+			os.remove(scl_path)
+
+		#if dw...
+		if os.path.isfile(LABEL_DIR+'/'+dw_id+'.tif'):
+			# exists, check files in .SAFE
+			n_files = len(os.listdir(DATA_DIR + '/' + folder))
+			if n_files != 5:
+				print("Folder %s has <5 files." % folder) #in case we actually need to check
+			else:
+				print("Folder %s -- OK." % folder)
+				n_input += 1
+				n_label += 1
+		else:
+			# d.n.e, remove whole .SAFE dir
+			print("--> Removing folder %s" % folder)
+			for file in os.listdir(DATA_DIR+'/'+folder):
+				os.remove('/'.join([DATA_DIR,folder,file]))
+			os.rmdir(DATA_DIR+'/'+folder)
+			removed_folders.append(folder)
+
+	print("%i REMOVED:" % len(removed_folders))
+	for rf in removed_folders:
+		print(rf)
+
+#---------------------------------------
 def plot_label_multiclass(path,dw_reader,borders):
 	"""
 	Plots the whole label raster with nodata borders removed.
@@ -442,7 +516,7 @@ def plot_label_multiclass_windowed(path,dw_reader,borders,windows):
 	dst.close()
 
 
-def plot_checkerboard(path,dw_reader,borders,windows):
+def plot_label_checkerboard(path,dw_reader,borders,windows):
 	"""
 	Plots whole label raster with overlaying squares corresponding to
 	the blocks/windows used as chips. Red squares are chips discarded, yellow
@@ -568,74 +642,13 @@ def plot_checkerboard(path,dw_reader,borders,windows):
 		arr3[:,arr==c] = [[r],[g],[b]]
 	out_ptr.write(arr3,window=writer_window,indexes=[1,2,3])
 
-
-def folder_check():
-	'''
-	Do a folder check to remove any .SAFE folder if that folder does not have a matching .tif
-	dynanmic world label.
-	'''
-	folders = [f for f in os.listdir(DATA_DIR) if f!='dynamicworld' and f[-5:]=='.SAFE']
-	n_input, n_label = 0,0
-	removed_folders = []
-
-	for folder in folders:
-		# empty folder, remove
-		if len(os.listdir(DATA_DIR+'/'+folder)) == 0:
-			print("Empty folder %s" % folder)
-			# os.rmdir(DATA_DIR+'/'+folder)
-			continue
-
-		# get xml, continue if no xml
-		try:
-			xml_name = [f for f in os.listdir(DATA_DIR+'/'+folder) if f[-4:]=='.xml'][0]
-			xml_path = '/'.join([DATA_DIR,folder,xml_name])
-		except IndexError:
-			print("Index error. No xml file in %s. Skipping." % folder)
-			continue
-		except Exception as err:
-			print('Other error retrieving xml file in %s. Skipping.' % folder)
-			print(err)
-			continue
-
-		# get dynarmicworld id
-		dstrip,_ = parse_xml(xml_path)
-		date     = folder[11:26]
-		tile     = folder[38:44]
-		dw_id    = '_'.join([date,dstrip,tile])
-
-		#delete all scl's
-		scl_file = '_'.join([tile,date,'SCL','20m.jp2'])
-		scl_path = '/'.join([DATA_DIR,folder,scl_file])
-		if os.path.isfile(scl_path):
-			print("Deleting %s" % scl_path)
-			os.remove(scl_path)
-
-		#if dw...
-		if os.path.isfile(LABEL_DIR+'/'+dw_id+'.tif'):
-			# exists, check files in .SAFE
-			n_files = len(os.listdir(DATA_DIR + '/' + folder))
-			if n_files != 5:
-				print("Folder %s has <5 files." % folder) #in case we actually need to check
-			else:
-				print("Folder %s -- OK." % folder)
-				n_input += 1
-				n_label += 1
-		else:
-			# d.n.e, remove whole .SAFE dir
-			print("--> Removing folder %s" % folder)
-			for file in os.listdir(DATA_DIR+'/'+folder):
-				os.remove('/'.join([DATA_DIR,folder,file]))
-			os.rmdir(DATA_DIR+'/'+folder)
-			removed_folders.append(folder)
-
-	print("%i REMOVED:" % len(removed_folders))
-	for rf in removed_folders:
-		print(rf)
+#TODO
+def plot_rgb_checkerboard(path,)
 
 #TODO
-def plot_label_singleclass_windowed():
+def plot_label_binary_windowed():
 	pass
-
+#---------------------------------------
 #TODO
 def chip_image_cpu(path: str, windows: [Tuple]):
 
@@ -651,10 +664,6 @@ def chip_image_cpu(path: str, windows: [Tuple]):
 #TODO
 def chip_image_cpu_worker(img: ndarray, windows: [Tuple]) -> None:
 	return
-
-#TODO
-def chip_image_gpu(img: ndarray) -> ndarray:
-	pass
 
 #TODO
 def adjust_label(win_arr: ndarray):
@@ -722,7 +731,7 @@ def plot_tci_windowed(dst_path,bands,borders,windows):
 def save_tci_window(path,bands,offsets,window):
 	return
 
-#TODO
+
 def check_histograms(fname:str, band:rio.DatasetReader, offset:int, borders: dict) -> None:
 	#plot params
 	n_bins = 2048
@@ -960,12 +969,12 @@ def process_product(safe_dir: str):
 	#1.ID -> BAND PATHS, XML PATH
 	band_filename = get_band_filenames(safe_dir,['B02','B03','B04','B08'])
 	band_paths    = [DATA_DIR+'/'+safe_dir+'/'+_  for _ in band_filename]
-	xml_filename  = [f for f in os.listdir(DATA_DIR+'/'+safe_dir) if f[-4:]=='.xml'][0] #bc MTD/MTD_L2A
+	xml_filename  = [f for f in os.listdir(DATA_DIR+'/'+safe_dir) if f[-4:]=='.xml'][0] #MTD/MTD_L2A
 	xml_path      = DATA_DIR + '/' + '/'.join([safe_dir,xml_filename])
 
 	#2.XML -> DW PATH, OFFSETS, QUANTIFICATION VALUE
 	datastrip,offsets = parse_xml(xml_path)
-	gee_id            = get_gee_id(safe_dir,datastrip)
+	gee_id            = join_gee_str(safe_dir,datastrip)
 	label_path        = '/'.join([LABEL_DIR,gee_id]) + '.tif'
 
 	#3.BAND PATHS, DW PATH -> DatasetReader x 5
@@ -991,12 +1000,14 @@ def process_product(safe_dir: str):
 
 	#8.ITERATE THROUGH WINDOWS
 	pass	
-	#FINAL ID should be: 
+	
 	'''
-	DATE_DSTRIP_ROTATION_TILE_ROW_COL
+	FINAL ID should be: 
+		DATE_DSTRIP_ROTATION_TILE_ROW_COL
 	'''
 
-def parse_kml()
+#TODO
+def check_product_overlaps():
 	pass
 
 ####################################################################################################
@@ -1006,12 +1017,25 @@ def parse_kml()
 if __name__ == '__main__':
 
 	#.SAFE folders in data directory
-	folders  = [d for d in os.listdir(DATA_DIR) if d[-5:]=='.SAFE']
+	folders = [d for d in os.listdir(DATA_DIR) if d[-5:]=='.SAFE']
 	# safe_dir = folders[2]
+
+	if os.path.isfile('./dat/index_whole.txt'):
+		products = []
+		with open('./dat/index_whole.txt') as fp:
+			for line in fp.readlines():
+				col = line.rstrip().split('_')
+				products += [(col[2],col[4],col[5].lstrip('T'),col[6].rstrip('.SAFE'))]
+
+		products = np.array(products)
+
+		T10TGK = products[products[:,2]=='10TGK']
+		T11TKE = products[products[:,2]=='11TKE']
+		T10SGJ = products[products[:,2]=='10SGJ']
+		T11SKD = products[products[:,2]=='11SKD']
+
 
 	band2_2 = rio.open('./dat/S2A_MSIL2A_20220210T184521_N0400_R070_T10SGJ_20220210T214135.SAFE/T10SGJ_20220210T184521_B02_10m.jp2','r')
 	band2_5 = rio.open('./dat/S2A_MSIL2A_20220210T184521_N0400_R070_T11SKD_20220210T214135.SAFE/T11SKD_20220210T184521_B02_10m.jp2','r')
+	
 
-	for safe_dir in folders:
-		process_product(safe_dir)	
-	# plot_checkerboard(gee_id+'_chk.tif',label,label_borders,label_windows)
