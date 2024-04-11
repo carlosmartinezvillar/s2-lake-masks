@@ -310,9 +310,6 @@ def convert_bounds(dw,s2,dw_ij_dict):
 	dict
 
 	"""
-	# s2 indexes:
-	# (18, 3391) (10959, 3391) (10959, 10958) (18, 10958) before
-	# (19, 3391) (10958, 3391) (10958, 10958) (19, 10958) after removing bounds
 	dw_xy_ul = dw.xy(dw_ij_dict['top'],dw_ij_dict['left'],offset='center')
 	dw_xy_lr = dw.xy(dw_ij_dict['bottom'],dw_ij_dict['right'],offset='center')
 	s2_ij_ul = s2.index(dw_xy_ul[0],dw_xy_ul[1],op=math.floor)
@@ -321,6 +318,35 @@ def convert_bounds(dw,s2,dw_ij_dict):
 	#return dict of bounds
 	return {'top':s2_ij_ul[0],'bottom':s2_ij_lr[0],
 		'left':s2_ij_ul[1],'right':s2_ij_lr[1]}
+
+
+def fix_bounds(s2_src,dw_src):
+	'''
+	Match indices and remove borders.
+	'''
+	dw_ij = {'top':0,'bottom':dw_src.height-1,'left':0,'right':dw_src.width-1}
+
+	dw_xy_ul = dw.xy(dw_ij['top'],dw_ij['left'])
+	dw_xy_lr = dw.xy(dw_ij['bottom'],dw_ij['right'])
+
+	s2_ij_t,s2_ij_l = s2.index(dw_xy_ul[0],dw_xy_ul[1],op=math.floor)
+	s2_ij_b,s2_ij_r = s2.index(dw_xy_lr[0],dw_xy_lr[1],op=math.floor)
+
+	s2_ij = {'top':s2_ij_t,'bottom':s2_ij_b,'left':s2_ij_l,'right':s2_ij_r}
+	
+	# REMOVE S2 TILE OVERLAP
+	if s2_ij['top'] < 492:
+		pass
+		#move down to 492
+
+	if s2_ij['bottom'] > 10488:	#10488 is 10980-492
+		pass #move up to 10488
+
+	if s2_ij['left'] < 492:
+		pass #move right to 492
+
+	if s2_ij['right'] > 10488:
+		pass #move loeft to 10488
 
 
 def get_windows(borders: dict) -> [Tuple]:
@@ -1096,16 +1122,5 @@ if __name__ == '__main__':
 	# 		for line in fp.readlines():
 	# 			col = line.rstrip().split('_')
 	# 			products += [(col[2],col[4],col[5].lstrip('T'),col[6].rstrip('.SAFE'))]
-
-	# 	products = np.array(products)
-
-	# 	T10TGK = products[products[:,2]=='10TGK']
-	# 	T11TKE = products[products[:,2]=='11TKE']
-	# 	T10SGJ = products[products[:,2]=='10SGJ']
-	# 	T11SKD = products[products[:,2]=='11SKD']
-
-
-	# band2_2 = rio.open('./dat/S2A_MSIL2A_20220210T184521_N0400_R070_T10SGJ_20220210T214135.SAFE/T10SGJ_20220210T184521_B02_10m.jp2','r')
-	# band2_5 = rio.open('./dat/S2A_MSIL2A_20220210T184521_N0400_R070_T11SKD_20220210T214135.SAFE/T11SKD_20220210T184521_B02_10m.jp2','r')
 	
 
