@@ -203,8 +203,7 @@ def get_band_filename(s2_id: str, band: str) -> str:
 	'''
 	Given a Sentinel-2 product name and band, return the band image file name.
 	'''
-	# date = s2_id[11:26]
-	# tile = s2_id[38:44]
+	# date = s2_id[11:26];tile = s2_id[38:44]
 	return '_'.join([s2_id[38:44],s2_id[11:26],band,'10m.jp2'])
 
 
@@ -215,7 +214,7 @@ def get_band_filenames(s2_img_id: str, bands: [str]) -> [str]:
 	return list(map(get_band_filename,[s2_img_id]*len(bands),bands))
 
 
-def remove_borders_as_array(dw_array: ndarray) -> ndarray:
+def remove_label_borders_as_array(dw_array: ndarray) -> ndarray:
 	'''
 	Take the ndarray of a dynamic world image as input and return a copy without its zero-valued 
 	borders, and a dictionary with the indices of the first and last row and first and last column 
@@ -238,7 +237,7 @@ def remove_borders_as_array(dw_array: ndarray) -> ndarray:
 	return dw_array[top:bottom+1,left:right+1],{'top':top,'bottom':bottom,'left':left,'right':right}
 
 
-def remove_borders(src: rio.DatasetReader) -> dict:
+def remove_label_borders(src: rio.DatasetReader) -> dict:
 	'''
 	Take a rasterio DatasetReader for a dynamicworld image and get the indices 
 	where non-zeros begin at the top, bottom, left, and right.
@@ -444,8 +443,11 @@ def folder_check():
 	for rf in removed_folders:
 		print(rf)
 
+
+	# if 
+
 #---------------------------------------
-def plot_label_multiclass(path,dw_reader,borders):
+def plot_label_multiclass(path,dw_reader,dw_borders):
 	"""
 	Plots the whole label raster with nodata borders removed.
 	"""
@@ -457,18 +459,18 @@ def plot_label_multiclass(path,dw_reader,borders):
 
 
 	# number of rows and cols takin' the boundaries into acct
-	h = borders['bottom'] + 1 - borders['top']
-	w = borders['right'] + 1 - borders['left']
+	h = dw_borders['bottom'] + 1 - dw_borders['top']
+	w = dw_borders['right'] + 1 - dw_borders['left']
 	read_window = Window(borders['left'],borders['top'],w,h)
 
 	#read, 1-band to 3-band, plot colors
-	dw = dw_reader.read(1,window=read_window)
-	dw3 = np.stack([dw,np.zeros_like(dw),np.zeros_like(dw)],axis=0).astype(np.uint8)
+	dw1 = dw_reader.read(1,window=read_window)
+	dw3 = np.stack([dw1,np.zeros_like(dw1),np.zeros_like(dw1)],axis=0).astype(np.uint8)
 	for i in range(10):
 		r = int(DW_PALETTE_10[i][0:2],16) #hex to int
 		g = int(DW_PALETTE_10[i][2:4],16)
 		b = int(DW_PALETTE_10[i][4:6],16)
-		dw3[:,dw==i] = [[r],[g],[b]]
+		dw3[:,dw1==i] = [[r],[g],[b]]
 
 	# writer parameters
 	kwargs = dw_reader.meta.copy()
@@ -515,11 +517,18 @@ def plot_label_multiclass_windowed(path,dw_reader,borders,windows):
 
 	dst.close()
 
+#TODO
+def plot_label_singleclass_windowed():
+	'''
+	Plot whole label with 2 classes as black and white. Need for paper print. 
+	'''
+	pass
+
 
 def plot_label_checkerboard(path,dw_reader,borders,windows):
 	"""
-	Plots whole label raster with overlaying squares corresponding to
-	the blocks/windows used as chips. Red squares are chips discarded, yellow
+	Plot whole label raster with overlaying squares corresponding to
+	to windows and chips. Red squares are chips discarded, yellow
 	squares are chips kept.
 	"""
 	DW_PALETTE_10 = ['000000','419bdf','397d49','88b053','7a87c6','e49635', 
@@ -643,161 +652,39 @@ def plot_label_checkerboard(path,dw_reader,borders,windows):
 	out_ptr.write(arr3,window=writer_window,indexes=[1,2,3])
 
 #TODO
-def plot_rgb_checkerboard(path,)
+def plot_rgb_checkerboard(path,s2_id):
+	band_fname  = get_band_filenames(s2_id,['B02','B03','B04','B08'])
+	band_reader = [rio.open(DATA_DIR+'/'+s2_id+'/'+f,'r') for f in band_fname]
 
-#TODO
-def plot_label_binary_windowed():
-	pass
-#---------------------------------------
-#TODO
-def chip_image_cpu(path: str, windows: [Tuple]):
+	gee_id    = get_gee_id(s2_id)
+	dw_path   = '/'.join([LABEL_DIR,gee_id]) + '.tif'
+	dw_reader = rio.open(dw_path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
 
-	#split windows into n_cpu arrays
+	dw_borders = remove_label_borders(dw)
+	s2_borders = convert_bounds(dw,band_reader[0],dw_borders)
 
-	#init n_cpu file readers
-	for i in range(mp.cpu_count):
-		readers += [rio.open(path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)]
-	return
+	s2_windows = get_windows(s2_borders)
 
-	#throw a worker to each array
+	kwargs = band_reader[0].meta.copy()
+	kwargs.update({
+		'count':3,
+		'driver':'JP2OpenJPEG','coded':'J2K',
+		'tiled':True,'blockxsize':CHIP_SIZE,'blockysize':CHIP_SIZE,
+		'dtype':'uint8'
+		})
+	out_ptr = rio.open(path,'w',**kwargs)
 
-#TODO
-def chip_image_cpu_worker(img: ndarray, windows: [Tuple]) -> None:
-	return
+	#plot whole thing 3-bands
+	b,g,r = (_.read(1) for _ in bands)
+	tci   = np.stack([r,g,b],axis=0).clip(0,32767).astype(np.int16) #int16 [-32767,32767]
 
-#TODO
-def adjust_label(win_arr: ndarray):
-	"""
-	Label 1 is water, remove unnecessary labels, equate to one, set rest to zero, nonvals(?),etc.
-	"""
-	window == 1
-	pass
+	rgb_zeromask = tci == 0
+	percentile99 = np.array([np.percentile(b[~rgb_zeromask[i]],99) for i,b in enumerate(tci)])
 
-#TODO
-def adjust_band(win_arr: ndarray):
-	"""
-	Do the shift by offset band values and divide by the quantification value,
-	clip values if needed
-	"""
-	pass
-
-#TODO
-def check_label_window(arr: ndarray):
-	"""
-	This checks if there's both water and land in the array.
-	"""
-	no_data_mask = arr==0
-	if no_data_mask.sum() > 4: #if no data
-		#red
-		return -1
-	else:			
-		n_water = (arr==1).sum()
-		if n_water > WATER_MIN and n_water < WATER_MAX:
-			#same as <---- yellow line
-			pass
-			correct_count += 1
-
-
-		else:
-			#same as <---- red line
-			pass
-
-	return True
-
-#TODO
-def check_band_window(arr: ndarray):
-	if (window == 0).sum() > 0: #no data present
-		return False
-	return True
-
-#TODO
-def process_window(w: Window, ):
-	pass
-
-#TODO
-def plot_tci_windowed(dst_path,bands,borders,windows):
-
-	#need to know size of output
-	px_rows = borders['bottom'] - borders['top'] + 1
-	px_cols = borders['right'] - borders['left'] + 1
-	px_rows_blocks = px_rows - (px_rows % CHIP_SIZE - 1)
-	px_cols_blocks = px_cols - (px_cols % CHIP_SIZE -1)
-
-
-
-	return True
-
-#TODO
-def save_tci_window(path,bands,offsets,window):
-	return
-
-
-def check_histograms(fname:str, band:rio.DatasetReader, offset:int, borders: dict) -> None:
-	#plot params
-	n_bins = 2048
-	px_plt = 1/plt.rcParams['figure.dpi']
-	H,W     = 600*px_plt,800*px_plt
-
-	#Remove no-data borders
-	px_rows = borders['bottom'] + 1 - borders['top']
-	px_cols = borders['right'] + 1 - borders['left']
-
-	#Read
-	w   = Window(borders['left'],borders['top'],px_cols,px_rows)	
-	red = band.read(1,window=w).astype(np.int16)
-
-	#Zeroes, percentiles
-	zero_mask = red == 0
-	red       = red + offset
-	pctile_99 = np.percentile(red[~zero_mask],99)
-	pctile_01 = np.percentile(red[~zero_mask],1)
-	print("Bot percentile: %i" % pctile_01)
-	print("Top percentile: %i" % pctile_99)
-
-	#normalize
-	nonzero_min = red[~zero_mask].min()
-	nonzero_max = red.max()
-
-	print("Min: %i" % nonzero_min)
-	print("Max: %i" % nonzero_max)
-
-	# # HIST 0 -- RAW
-	hist_path  = '_'.join(['./fig/'+fname,'hist','0.png'])
-	fig,ax = plt.subplots(figsize=(W,H))
-	ax.set_title("Red band -- original")
-	ax.hist(red[~zero_mask],bins=n_bins,histtype='bar',color='red')
-	ax.axvline(pctile_99,color='black',linewidth=0.4)
-	ax.axvline(pctile_01,color='black',linewidth=0.4)
-	ax.axvline(1000+offset,color='blue',linewidth=0.4,linestyle='--')	
-	# ax.set_ylim(0,500000)
-	plt.savefig(hist_path)
-	print("Band histogram saved to %s." % hist_path)
-	plt.close()
-
-	# HIST 1 -- normalized to [0,1]*255
-	red_normed  = (red[~zero_mask]-(1+offset))/(nonzero_max-(1+offset))
-	this_array = (red_normed*255).round().astype(np.uint8)
-	hist_path = '_'.join(['./fig/'+fname,'hist','1.png'])
-	fig,ax    = plt.subplots(figsize=(W,H))
-	ax.set_title("Red band -- scaled to [0,1]*255")
-	ax.hist(this_array,bins=255,histtype='bar',color='red')
-	# # ax.set_ylim(0,500000)
-	ax.axvline(np.percentile(this_array,99),color='black',linewidth=0.4)
-	plt.savefig(hist_path)
-	print("Band histogram saved to %s." % hist_path)
-	plt.close()
-
-
-	#HIST 2 -- clipped normed binned
-	this_array = (np.clip(red[~zero_mask],1,pctile_99)-1)/(pctile_99-1)
-	# this_array = (np.clip(red_normed,0,0.99)/(0.99) * 255).round().astype(np.uint8)
-	this_array = (this_array * 255).round().astype(np.uint8)
-	hist_path  = '_'.join(['./fig/'+fname,'hist','2.png'])
-	fig,ax     = plt.subplots(figsize=(W,H))
-	ax.set_title("Red band -- shifted, clipped, scaled, and binned")
-	ax.hist(this_array,bins=255,histtype='bar',color='red')
-	plt.savefig(hist_path)
-	print("Band histogram saved to %s." % hist_path)
+	#plot windows
+	for _,w in windows:
+		arr = dw_reader.read(1,window=w)
+		arr3 = np.stack([arr,np.zeros_like(arr),np.zeros_like(arr)],axis=0)
 
 #TODO
 def plot_tci_masks(fname:str, bands:[rio.DatasetReader], offsets:[int], borders: dict) -> None:
@@ -820,7 +707,7 @@ def plot_tci_masks(fname:str, bands:[rio.DatasetReader], offsets:[int], borders:
 
 	#Stack bands
 	b,g,r = (_.read(1,window=w) for _ in bands)
-	tci   = np.stack([r,g,b],axis=0).clip(0,32767).astype(np.int16) #int16 in [-32767,32767]
+	tci   = np.stack([r,g,b],axis=0).clip(0,32767).astype(np.int16) #int16 [-32767,32767]
 
 	# nodata
 	rgb_zeromask = tci == 0
@@ -828,7 +715,7 @@ def plot_tci_masks(fname:str, bands:[rio.DatasetReader], offsets:[int], borders:
 	esa_highmask = (tci >= 11000).any(axis=0) #OR thru axis 0
 
 	# add offsets
-	# tci          = tci + np.array(offsets).reshape((3,1,1))
+	# tci        = tci + np.array(offsets).reshape((3,1,1))
 
 	#calculate percentiles and get masks for them
 	pctiles_99 = np.array([np.percentile(b[~rgb_zeromask[i]],99.9) for i,b in enumerate(tci)])
@@ -959,6 +846,185 @@ def plot_tci_masks(fname:str, bands:[rio.DatasetReader], offsets:[int], borders:
 			os.remove('./fig/'+f)
 
 #TODO
+def plot_tci_windowed(dst_path,bands,borders,windows):
+
+	#need to know size of output
+	px_rows = borders['bottom'] - borders['top'] + 1
+	px_cols = borders['right'] - borders['left'] + 1
+	px_rows_blocks = px_rows - (px_rows % CHIP_SIZE - 1)
+	px_cols_blocks = px_cols - (px_cols % CHIP_SIZE -1)
+
+
+
+	return True
+
+#TODO
+def save_tci_window(path,bands,offsets,window):
+	return
+#---------------------------------------
+#TODO
+def chip_image_cpu(path: str, windows: [Tuple]):
+
+	#split windows into n_cpu arrays
+
+	#init n_cpu file readers
+	for i in range(mp.cpu_count):
+		readers += [rio.open(path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)]
+	return
+
+	#throw a worker to each array
+
+#TODO
+def chip_image_cpu_worker(img: ndarray, windows: [Tuple]) -> None:
+	return
+
+#TODO
+def adjust_label(win_arr: ndarray):
+	"""
+	Label 1 is water, remove unnecessary labels, equate to one, set rest to zero, nonvals(?),etc.
+	"""
+	window == 1
+	pass
+
+#TODO
+def adjust_band(win_arr: ndarray):
+	"""
+	Do the shift by offset band values and divide by the quantification value,
+	clip values if needed
+	"""
+	pass
+
+#TODO
+def check_label_window(arr: ndarray):
+	"""
+	This checks if there's both water and land in the array.
+	"""
+	no_data_mask = arr==0
+	if no_data_mask.sum() > 4: #if no data
+		#red
+		return -1
+	else:			
+		n_water = (arr==1).sum()
+		if n_water > WATER_MIN and n_water < WATER_MAX:
+			#same as <---- yellow line
+			pass
+			correct_count += 1
+
+
+		else:
+			#same as <---- red line
+			pass
+
+	return True
+
+#TODO
+def check_band_window(arr: ndarray):
+	if (window == 0).sum() > 0: #no data present
+		return False
+	return True
+
+#TODO
+def process_window(w: Window, ):
+	pass
+
+
+def check_histograms(fname:str, band:rio.DatasetReader, offset:int, borders: dict) -> None:
+	#plot params
+	n_bins = 2048
+	px_plt = 1/plt.rcParams['figure.dpi']
+	H,W     = 600*px_plt,800*px_plt
+
+	#Remove no-data borders
+	px_rows = borders['bottom'] + 1 - borders['top']
+	px_cols = borders['right'] + 1 - borders['left']
+
+	#Read
+	w   = Window(borders['left'],borders['top'],px_cols,px_rows)	
+	red = band.read(1,window=w).astype(np.int16)
+
+	#Zeroes, percentiles
+	zero_mask = red == 0
+	red       = red + offset
+	pctile_99 = np.percentile(red[~zero_mask],99)
+	pctile_01 = np.percentile(red[~zero_mask],1)
+	print("Bot percentile: %i" % pctile_01)
+	print("Top percentile: %i" % pctile_99)
+
+	#normalize
+	nonzero_min = red[~zero_mask].min()
+	nonzero_max = red.max()
+
+	print("Min: %i" % nonzero_min)
+	print("Max: %i" % nonzero_max)
+
+	# # HIST 0 -- RAW
+	hist_path  = '_'.join(['./fig/'+fname,'hist','0.png'])
+	fig,ax = plt.subplots(figsize=(W,H))
+	ax.set_title("Red band -- original")
+	ax.hist(red[~zero_mask],bins=n_bins,histtype='bar',color='red')
+	ax.axvline(pctile_99,color='black',linewidth=0.4)
+	ax.axvline(pctile_01,color='black',linewidth=0.4)
+	ax.axvline(1000+offset,color='blue',linewidth=0.4,linestyle='--')	
+	# ax.set_ylim(0,500000)
+	plt.savefig(hist_path)
+	print("Band histogram saved to %s." % hist_path)
+	plt.close()
+
+	# HIST 1 -- normalized to [0,1]*255
+	red_normed  = (red[~zero_mask]-(1+offset))/(nonzero_max-(1+offset))
+	this_array = (red_normed*255).round().astype(np.uint8)
+	hist_path = '_'.join(['./fig/'+fname,'hist','1.png'])
+	fig,ax    = plt.subplots(figsize=(W,H))
+	ax.set_title("Red band -- scaled to [0,1]*255")
+	ax.hist(this_array,bins=255,histtype='bar',color='red')
+	# # ax.set_ylim(0,500000)
+	ax.axvline(np.percentile(this_array,99),color='black',linewidth=0.4)
+	plt.savefig(hist_path)
+	print("Band histogram saved to %s." % hist_path)
+	plt.close()
+
+
+	#HIST 2 -- clipped normed binned
+	this_array = (np.clip(red[~zero_mask],1,pctile_99)-1)/(pctile_99-1)
+	# this_array = (np.clip(red_normed,0,0.99)/(0.99) * 255).round().astype(np.uint8)
+	this_array = (this_array * 255).round().astype(np.uint8)
+	hist_path  = '_'.join(['./fig/'+fname,'hist','2.png'])
+	fig,ax     = plt.subplots(figsize=(W,H))
+	ax.set_title("Red band -- shifted, clipped, scaled, and binned")
+	ax.hist(this_array,bins=255,histtype='bar',color='red')
+	plt.savefig(hist_path)
+	print("Band histogram saved to %s." % hist_path)
+
+
+def load_product(safe_dir:str) -> Tuple:
+	'''
+	Do all the stuff needed before any step/plots
+	'''
+	# ID -> BAND READERS, XML PATH
+	s2_fnames  = get_band_filenames(safe_dir,['B02','B03','B04','B08'])
+	s2_readers = [rio.open(DATA_DIR+'/'+safe_dir+'/'+f,'r') for f in s2_fnames]
+
+	#2.XML -> DW PATH, OFFSETS
+	xml_fname  = [f for f in os.listdir(DATA_DIR+'/'+safe_dir) if f[-4:]=='.xml'][0]
+	xml_path   = DATA_DIR + '/' + '/'.join([safe_dir,xml_fname])
+	datastrip,offsets = parse_xml(xml_path)
+	date,tile         = safe_dir.split('_')[2:6:3]
+	gee_id            = '_'.join([date,datastrip,tile])
+	dw_path           = '/'.join([LABEL_DIR,gee_id]) + '.tif'
+	dw_reader         = rio.open(dw_path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+
+	#4.DW READER -> BOUNDARIES DW
+	#5.BOUNDARIES DW, (1) BAND READER -> BOUNDARIES S2
+	# dw_borders = remove_label_borders(dw_reader)
+	dw_borders = {'top':0,'bottom':dw_reader.height-1,'left':0,'right':dw_reader.width-1}
+	s2_borders = convert_bounds(dw_reader,s2_readers[0],dw_borders)
+
+	s2_windows = get_windows(s2_borders)
+	dw_windows = get_windows(dw_borders)
+
+	return s2_readers,s2_borders,dw_reader,dw_borders
+
+#TODO
 def process_product(safe_dir: str):
 	'''
 	Process a .SAFE folder.
@@ -969,10 +1035,10 @@ def process_product(safe_dir: str):
 	#1.ID -> BAND PATHS, XML PATH
 	band_filename = get_band_filenames(safe_dir,['B02','B03','B04','B08'])
 	band_paths    = [DATA_DIR+'/'+safe_dir+'/'+_  for _ in band_filename]
-	xml_filename  = [f for f in os.listdir(DATA_DIR+'/'+safe_dir) if f[-4:]=='.xml'][0] #MTD/MTD_L2A
+	xml_filename  = [f for f in os.listdir(DATA_DIR+'/'+safe_dir) if f[-4:]=='.xml'][0]
 	xml_path      = DATA_DIR + '/' + '/'.join([safe_dir,xml_filename])
 
-	#2.XML -> DW PATH, OFFSETS, QUANTIFICATION VALUE
+	#2.XML -> DW PATH, OFFSETs
 	datastrip,offsets = parse_xml(xml_path)
 	gee_id            = join_gee_str(safe_dir,datastrip)
 	label_path        = '/'.join([LABEL_DIR,gee_id]) + '.tif'
@@ -985,7 +1051,7 @@ def process_product(safe_dir: str):
 	band8 = rio.open(band_paths[3],'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
 
 	#4.DW READER -> BOUNDARIES DW
-	label_borders = remove_borders(label)
+	label_borders = remove_label_borders(label)
 
 	#5.BOUNDARIES DW, (1) BAND READER -> BOUNDARIES S2 -- EQUATE S2 & DW BOUNDS
 	input_borders = convert_bounds(label,band2,label_borders)
@@ -995,8 +1061,8 @@ def process_product(safe_dir: str):
 	label_windows = get_windows(label_borders)
 
 	#7.DO SOME CHECKs
-	check_histograms(gee_id,band2,offsets[2],input_borders)
-	# plot_tci_masks(gee_id+'_TCI',[band2,band3,band4],offsets[0:3],input_borders)
+	# check_histograms(gee_id,band2,offsets[2],input_borders)
+	plot_tci_masks(gee_id+'_TCI',[band2,band3,band4],offsets[0:3],input_borders)
 
 	#8.ITERATE THROUGH WINDOWS
 	pass	
@@ -1018,24 +1084,28 @@ if __name__ == '__main__':
 
 	#.SAFE folders in data directory
 	folders = [d for d in os.listdir(DATA_DIR) if d[-5:]=='.SAFE']
+
+	prods   = [load_product(f) for f in folders]
+
+	print(folders)
 	# safe_dir = folders[2]
 
-	if os.path.isfile('./dat/index_whole.txt'):
-		products = []
-		with open('./dat/index_whole.txt') as fp:
-			for line in fp.readlines():
-				col = line.rstrip().split('_')
-				products += [(col[2],col[4],col[5].lstrip('T'),col[6].rstrip('.SAFE'))]
+	# if os.path.isfile('./dat/index_whole.txt'):
+	# 	products = []
+	# 	with open('./dat/index_whole.txt') as fp:
+	# 		for line in fp.readlines():
+	# 			col = line.rstrip().split('_')
+	# 			products += [(col[2],col[4],col[5].lstrip('T'),col[6].rstrip('.SAFE'))]
 
-		products = np.array(products)
+	# 	products = np.array(products)
 
-		T10TGK = products[products[:,2]=='10TGK']
-		T11TKE = products[products[:,2]=='11TKE']
-		T10SGJ = products[products[:,2]=='10SGJ']
-		T11SKD = products[products[:,2]=='11SKD']
+	# 	T10TGK = products[products[:,2]=='10TGK']
+	# 	T11TKE = products[products[:,2]=='11TKE']
+	# 	T10SGJ = products[products[:,2]=='10SGJ']
+	# 	T11SKD = products[products[:,2]=='11SKD']
 
 
-	band2_2 = rio.open('./dat/S2A_MSIL2A_20220210T184521_N0400_R070_T10SGJ_20220210T214135.SAFE/T10SGJ_20220210T184521_B02_10m.jp2','r')
-	band2_5 = rio.open('./dat/S2A_MSIL2A_20220210T184521_N0400_R070_T11SKD_20220210T214135.SAFE/T11SKD_20220210T184521_B02_10m.jp2','r')
+	# band2_2 = rio.open('./dat/S2A_MSIL2A_20220210T184521_N0400_R070_T10SGJ_20220210T214135.SAFE/T10SGJ_20220210T184521_B02_10m.jp2','r')
+	# band2_5 = rio.open('./dat/S2A_MSIL2A_20220210T184521_N0400_R070_T11SKD_20220210T214135.SAFE/T11SKD_20220210T184521_B02_10m.jp2','r')
 	
 
