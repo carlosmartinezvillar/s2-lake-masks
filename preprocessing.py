@@ -320,33 +320,40 @@ def convert_bounds(dw,s2,dw_ij_dict):
 		'left':s2_ij_ul[1],'right':s2_ij_lr[1]}
 
 
-def fix_bounds(s2_src,dw_src):
+def align(s2_src,dw_src):
 	'''
 	Match indices and remove borders.
 	'''
+	# dw_ij = remove_label_borders(dw_src)
 	dw_ij = {'top':0,'bottom':dw_src.height-1,'left':0,'right':dw_src.width-1}
-
-	dw_xy_ul = dw.xy(dw_ij['top'],dw_ij['left'])
-	dw_xy_lr = dw.xy(dw_ij['bottom'],dw_ij['right'])
+	dw_xy_ul = dw.xy(0,0)
+	dw_xy_lr = dw.xy(dw_src.height-1,dw_src.width-1)
 
 	s2_ij_t,s2_ij_l = s2.index(dw_xy_ul[0],dw_xy_ul[1],op=math.floor)
 	s2_ij_b,s2_ij_r = s2.index(dw_xy_lr[0],dw_xy_lr[1],op=math.floor)
 
-	s2_ij = {'top':s2_ij_t,'bottom':s2_ij_b,'left':s2_ij_l,'right':s2_ij_r}
+	# s2_ij = {'top':s2_ij_t,'bottom':s2_ij_b,'left':s2_ij_l,'right':s2_ij_r}
 	
 	# REMOVE S2 TILE OVERLAP
-	if s2_ij['top'] < 492:
-		pass
-		#move down to 492
+	if s2_ij_t < 492:
+		diff     = 492 - s2_ij_t
+		new_s2_t = 492
+		new_dw_t = dw_ij['top'] + diff
 
-	if s2_ij['bottom'] > 10488:	#10488 is 10980-492
-		pass #move up to 10488
+	if s2_ij['bottom'] > 10487:	#10488 is 10980-492
+		diff     = s2_ij_b - 10487
+		new_s2_t = 10487
+		new_dw_t = dw_ij['bottom'] - diff
 
 	if s2_ij['left'] < 492:
-		pass #move right to 492
+		diff     = 492 - s2_ij_l
+		new_s2_l = 492
+		new_dw_l = dw_ij['left'] + diff
 
-	if s2_ij['right'] > 10488:
-		pass #move loeft to 10488
+	if s2_ij['right'] > 10487:
+		diff     = s2_ij_r - 10487
+		new_s2_r = 10487
+		new_dw_r = dw_ij['right'] - diff
 
 
 def get_windows(borders: dict) -> [Tuple]:
@@ -1113,7 +1120,7 @@ if __name__ == '__main__':
 
 	prods   = [load_product(f) for f in folders]
 
-	print(folders)
+	print(prods[0])
 	# safe_dir = folders[2]
 
 	# if os.path.isfile('./dat/index_whole.txt'):
