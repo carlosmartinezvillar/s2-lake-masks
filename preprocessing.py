@@ -255,7 +255,10 @@ def remove_label_borders(src: rio.DatasetReader) -> dict:
 		bottom
 
 	'''
-	top,bottom,left,right = 0,src.height-1,0,src.width-1
+	top    = 0
+	bottom = src.height-1
+	left   = 0
+	right  = src.width-1
 
 	while(True):
 		row = src.read(1,window=rio.windows.Window(0,top,src.width,1))
@@ -322,39 +325,44 @@ def convert_bounds(dw,s2,dw_ij_dict):
 
 def align(s2_src,dw_src):
 	'''
-	Match indices and remove borders.
+	Do everything: match indices and remove borders.
 	'''
-	# dw_ij = remove_label_borders(dw_src)
-	dw_ij = {'top':0,'bottom':dw_src.height-1,'left':0,'right':dw_src.width-1}
-	dw_xy_ul = dw.xy(0,0)
-	dw_xy_lr = dw.xy(dw_src.height-1,dw_src.width-1)
+	# REMOVE DW NO-DATA BORDERS
+	dw_ij = remove_label_borders(dw_src)
+	# dw_ij = {'top':0,'bottom':dw_src.height-1,'left':0,'right':dw_src.width-1}
 
-	s2_ij_t,s2_ij_l = s2.index(dw_xy_ul[0],dw_xy_ul[1],op=math.floor)
-	s2_ij_b,s2_ij_r = s2.index(dw_xy_lr[0],dw_xy_lr[1],op=math.floor)
+	# MATCH DW to S2.
+	# DW ij's -> DW xy's -> S2 ij's. DW has ~20px less on each side.
+	dw_xy_ul = dw_src.xy(dw_ij['top'],dw_ij['left'],offset='center')
+	dw_xy_lr = dw_src.xy(dw_ij['bottom'],dw_ij['right'],offset='center')
+	s2_ij_t,s2_ij_l = s2_src.index(dw_xy_ul[0],dw_xy_ul[1],op=math.floor)
+	s2_ij_b,s2_ij_r = s2_src.index(dw_xy_lr[0],dw_xy_lr[1],op=math.floor)
 
-	# s2_ij = {'top':s2_ij_t,'bottom':s2_ij_b,'left':s2_ij_l,'right':s2_ij_r}
-	
 	# REMOVE S2 TILE OVERLAP
-	if s2_ij_t < 492:
-		diff     = 492 - s2_ij_t
-		new_s2_t = 492
-		new_dw_t = dw_ij['top'] + diff
+	if s2_ij_t < 492:		
+		delta        = 492 - s2_ij_t
+		s2_ij_t      = 492
+		dw_ij['top'] = dw_ij['top'] + delta
 
-	if s2_ij['bottom'] > 10487:	#10488 is 10980-492
-		diff     = s2_ij_b - 10487
-		new_s2_t = 10487
-		new_dw_t = dw_ij['bottom'] - diff
+	if s2_ij_b > 10487:
+		delta           = s2_ij_b - 10487
+		s2_ij_b         = 10487	
+		dw_ij['bottom'] = dw_ij['bottom'] - delta
 
-	if s2_ij['left'] < 492:
-		diff     = 492 - s2_ij_l
-		new_s2_l = 492
-		new_dw_l = dw_ij['left'] + diff
+	if s2_ij_l < 492:
+		delta         = 492 - s2_ij_l
+		s2_ij_l       = 492	
+		dw_ij['left'] = dw_ij['left'] + delta
 
-	if s2_ij['right'] > 10487:
-		diff     = s2_ij_r - 10487
-		new_s2_r = 10487
-		new_dw_r = dw_ij['right'] - diff
+	if s2_ij_r > 10487:
+		delta          = s2_ij_r - 10487
+		s2_ij_r        = 10487		
+		dw_ij['right'] = dw_ij['right'] - delta
 
+	s2_ij = {'top':s2_ij_t,'bottom':s2_ij_b,'left':s2_ij_l,'right':s2_ij_r}
+
+	return s2_ij,dw_ij
+	
 
 def get_windows(borders: dict) -> [Tuple]:
 	'''
@@ -402,25 +410,22 @@ def get_windows(borders: dict) -> [Tuple]:
 		i = k // block_cols
 		j = k % block_cols
 		row_start = i * CHIP_SIZE + borders['top']
-		# row_stop  = row_start + CHIP_SIZE
 		col_start = j * CHIP_SIZE + borders['left']
-		# col_stop  = col_start + CHIP_SIZE
-
 		W = Window(col_start,row_start,CHIP_SIZE,CHIP_SIZE)
-		# W += [Window.from_slices((row_start,row_stop),(col_start,col_stop))]
 		windows += [[(str(i),str(j)),W]]
 
 	return windows
 
 
-def folder_check():
+def folder_check(drop_tiles=False):
 	'''
-	Do a folder check to remove any .SAFE folder if that folder does not have a matching .tif
-	dynanmic world label.
+	1.Remove .SAFE/products without a matching dynanmic world label.
+	2.Drop two tiles: T11SKD,T11TKE.
 	'''
 	folders = [f for f in os.listdir(DATA_DIR) if f!='dynamicworld' and f[-5:]=='.SAFE']
 	n_input, n_label = 0,0
 	removed_folders = []
+	removed_tile    = []
 
 	for folder in folders:
 		# empty folder, remove
@@ -457,9 +462,9 @@ def folder_check():
 		#if dw...
 		if os.path.isfile(LABEL_DIR+'/'+dw_id+'.tif'):
 			# exists, check files in .SAFE
-			n_files = len(os.listdir(DATA_DIR + '/' + folder))
-			if n_files != 5:
-				print("Folder %s has <5 files." % folder) #in case we actually need to check
+			n_files = len([_ for _ in os.listdir(DATA_DIR +'/'+folder) if _[0]!='.'])
+			if n_files < 5:
+				print("Folder %s -- <5 files." % folder) #in case we actually need to check
 			else:
 				print("Folder %s -- OK." % folder)
 				n_input += 1
@@ -477,8 +482,29 @@ def folder_check():
 		print(rf)
 
 
-	# if 
+	# DID NOT include tile removal above so 2nd/3rd pass...
+	# ------------------------------------------------------
+	drop = ['T11SKD','T11TKE']
 
+	#drop labels
+	labels = [l for l in os.listdir(LABEL_DIR) if l[-3:]=='tif']
+	for label in labels:
+		if label.split('_')[2][0:6] in drop:
+			os.remove(LABEL_DIR+'/'+label)
+			removed_folders += [label]
+
+	#drop .SAFE
+	folders = [f for f in os.listdir(DATA_DIR) if f!='dynamicworld' and f[-5:]=='.SAFE']
+	for folder in folders:
+		if folder.split('_')[5] in drop:
+			for file in os.listdir(DATA_DIR+'/'+folder):
+				if file[0] != '.':
+					os.remove('/'.join([DATA_DIR,folder,file]))
+			os.rmdir(DATA_DIR+'/'+folder)
+			removed_folders += [folder]
+
+
+# PLOTS
 #---------------------------------------
 def plot_label_multiclass(path,dw_reader,dw_borders):
 	"""
@@ -1048,16 +1074,11 @@ def load_product(safe_dir:str) -> Tuple:
 
 	#4.DW READER -> BOUNDARIES DW
 	#5.BOUNDARIES DW, (1) BAND READER -> BOUNDARIES S2
-	# dw_borders = remove_label_borders(dw_reader)
-	dw_borders = {'top':0,'bottom':dw_reader.height-1,'left':0,'right':dw_reader.width-1}
-	s2_borders = convert_bounds(dw_reader,s2_readers[0],dw_borders)
-
-	s2_windows = get_windows(s2_borders)
-	dw_windows = get_windows(dw_borders)
+	s2_borders,dw_borders = align(s2_readers[0],dw_reader)
 
 	return s2_readers,s2_borders,dw_reader,dw_borders
 
-#TODO
+#TODO --> final func to pass thru all
 def process_product(safe_dir: str):
 	'''
 	Process a .SAFE folder.
@@ -1117,10 +1138,10 @@ if __name__ == '__main__':
 
 	#.SAFE folders in data directory
 	folders = [d for d in os.listdir(DATA_DIR) if d[-5:]=='.SAFE']
+	# prods   = [load_product(f) for f in folders]
 
-	prods   = [load_product(f) for f in folders]
+	folder_check()
 
-	print(prods[0])
 	# safe_dir = folders[2]
 
 	# if os.path.isfile('./dat/index_whole.txt'):
