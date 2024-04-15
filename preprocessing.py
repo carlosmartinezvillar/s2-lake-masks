@@ -327,48 +327,46 @@ def align(s2_src,dw_src):
 	'''
 	Do everything: match indices and remove borders.
 	'''
-	# REMOVE DW NO-DATA BORDERS
+	# REMOVE DW NO-DATA BORDERS(~1-2px each side)
 	dw_ij = remove_label_borders(dw_src)
 	# dw_ij = {'top':0,'bottom':dw_src.height-1,'left':0,'right':dw_src.width-1}
 
-	# MATCH DW to S2.
-	# DW ij's -> DW xy's -> S2 ij's. DW has ~20px less on each side.
+	# MATCH DW to S2 (DW has ~20px less on each side)
+	# Done like this: DW ij's -> DW xy's -> S2 ij's. 
 	dw_xy_ul = dw_src.xy(dw_ij['top'],dw_ij['left'],offset='center')
 	dw_xy_lr = dw_src.xy(dw_ij['bottom'],dw_ij['right'],offset='center')
 	s2_ij_t,s2_ij_l = s2_src.index(dw_xy_ul[0],dw_xy_ul[1],op=math.floor)
 	s2_ij_b,s2_ij_r = s2_src.index(dw_xy_lr[0],dw_xy_lr[1],op=math.floor)
 
 	# REMOVE S2 TILE OVERLAP
-	if s2_ij_t < 492:		
+	if s2_ij_t < 492: #shift top down
 		delta        = 492 - s2_ij_t
 		s2_ij_t      = 492
 		dw_ij['top'] = dw_ij['top'] + delta
 
-	if s2_ij_b > 10487:
+	if s2_ij_b > 10487: #shift bottom up
 		delta           = s2_ij_b - 10487
 		s2_ij_b         = 10487	
 		dw_ij['bottom'] = dw_ij['bottom'] - delta
 
-	if s2_ij_l < 492:
+	if s2_ij_l < 492: #shift left right
 		delta         = 492 - s2_ij_l
 		s2_ij_l       = 492	
 		dw_ij['left'] = dw_ij['left'] + delta
 
-	if s2_ij_r > 10487:
+	if s2_ij_r > 10487: #shift right left
 		delta          = s2_ij_r - 10487
 		s2_ij_r        = 10487		
 		dw_ij['right'] = dw_ij['right'] - delta
 
 	s2_ij = {'top':s2_ij_t,'bottom':s2_ij_b,'left':s2_ij_l,'right':s2_ij_r}
-
 	return s2_ij,dw_ij
 	
 
 def get_windows(borders: dict) -> [Tuple]:
 	'''
-	Given a set of starting and stopping boundaries, returns an array list with
-	tuples (i,j) for block indices i,j and window objects corresponding to the
-	block i,j while taking into consideration only the area of the raster
+	Given a dicts of boundaries, returns an array list with tuples (i,j) for block indices i,j and 
+	window objects corresponding to the block i,j while taking into consideration only the area of the raster
 	within the boundaries defined by the indices in the borders dict. For exam-
 	ple, if the array had two rows and a column of no data on the left and top, 
 	the blocks would be offset and defined as:
@@ -417,7 +415,7 @@ def get_windows(borders: dict) -> [Tuple]:
 	return windows
 
 
-def folder_check(drop_tiles=False):
+def folder_check(drop_tiles=True):
 	'''
 	1.Remove .SAFE/products without a matching dynanmic world label.
 	2.Drop two tiles: T11SKD,T11TKE.
@@ -425,8 +423,10 @@ def folder_check(drop_tiles=False):
 	folders = [f for f in os.listdir(DATA_DIR) if f!='dynamicworld' and f[-5:]=='.SAFE']
 	n_input, n_label = 0,0
 	removed_folders = []
-	removed_tile    = []
+	removed_tiles   = []
 
+	# FOR EACH .SAFE folder check: empty?,xml?,label?
+	# ------------------------------------------------------
 	for folder in folders:
 		# empty folder, remove
 		if len(os.listdir(DATA_DIR+'/'+folder)) == 0:
@@ -464,7 +464,7 @@ def folder_check(drop_tiles=False):
 			# exists, check files in .SAFE
 			n_files = len([_ for _ in os.listdir(DATA_DIR +'/'+folder) if _[0]!='.'])
 			if n_files < 5:
-				print("Folder %s -- <5 files." % folder) #in case we actually need to check
+				print("Folder %s -- <5 files." % folder) #check
 			else:
 				print("Folder %s -- OK." % folder)
 				n_input += 1
@@ -482,27 +482,32 @@ def folder_check(drop_tiles=False):
 		print(rf)
 
 
-	# DID NOT include tile removal above so 2nd/3rd pass...
+	# DID NOT include tile removal above so 2nd+3rd pass...
 	# ------------------------------------------------------
-	drop = ['T11SKD','T11TKE']
+	if drop_tiles == True:
+		drop = ['T11SKD','T11TKE']
 
-	#drop labels
-	labels = [l for l in os.listdir(LABEL_DIR) if l[-3:]=='tif']
-	for label in labels:
-		if label.split('_')[2][0:6] in drop:
-			os.remove(LABEL_DIR+'/'+label)
-			removed_folders += [label]
+		#drop labels
+		labels = [l for l in os.listdir(LABEL_DIR) if l[-3:]=='tif']
+		for label in labels:
+			if label.split('_')[2][0:6] in drop:
+				os.remove(LABEL_DIR+'/'+label)
+				removed_tiles += [label]
 
-	#drop .SAFE
-	folders = [f for f in os.listdir(DATA_DIR) if f!='dynamicworld' and f[-5:]=='.SAFE']
-	for folder in folders:
-		if folder.split('_')[5] in drop:
-			for file in os.listdir(DATA_DIR+'/'+folder):
-				if file[0] != '.':
-					os.remove('/'.join([DATA_DIR,folder,file]))
-			os.rmdir(DATA_DIR+'/'+folder)
-			removed_folders += [folder]
+		#drop .SAFE
+		folders = [f for f in os.listdir(DATA_DIR) if f!='dynamicworld' and f[-5:]=='.SAFE']
+		for folder in folders:
+			if folder.split('_')[5] in drop:
+				for file in os.listdir(DATA_DIR+'/'+folder):
+					if file[0] != '.':
+						os.remove('/'.join([DATA_DIR,folder,file]))
+				os.rmdir(DATA_DIR+'/'+folder)
+				removed_tiles += [folder]
 
+		print("Dropped the following tiles:")
+		for rt in removed_tiles:print(rt)
+
+	return
 
 # PLOTS
 #---------------------------------------
@@ -712,18 +717,8 @@ def plot_label_checkerboard(path,dw_reader,borders,windows):
 
 #TODO
 def plot_rgb_checkerboard(path,s2_id):
-	band_fname  = get_band_filenames(s2_id,['B02','B03','B04','B08'])
-	band_reader = [rio.open(DATA_DIR+'/'+s2_id+'/'+f,'r') for f in band_fname]
-
-	gee_id    = get_gee_id(s2_id)
-	dw_path   = '/'.join([LABEL_DIR,gee_id]) + '.tif'
-	dw_reader = rio.open(dw_path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
-
-	dw_borders = remove_label_borders(dw)
-	s2_borders = convert_bounds(dw,band_reader[0],dw_borders)
-
-	s2_windows = get_windows(s2_borders)
-
+	s2_reader,s2_bounds,dw_reader,dw_bounds = load_product(s2_id)
+	s2_windows = get_windows(s2_bounds)
 	kwargs = band_reader[0].meta.copy()
 	kwargs.update({
 		'count':3,
@@ -734,15 +729,17 @@ def plot_rgb_checkerboard(path,s2_id):
 	out_ptr = rio.open(path,'w',**kwargs)
 
 	#plot whole thing 3-bands
-	b,g,r = (_.read(1) for _ in bands)
+	b,g,r = (_.read(1) for _ in s2_reader[0:3])
 	tci   = np.stack([r,g,b],axis=0).clip(0,32767).astype(np.int16) #int16 [-32767,32767]
 
 	rgb_zeromask = tci == 0
 	percentile99 = np.array([np.percentile(b[~rgb_zeromask[i]],99) for i,b in enumerate(tci)])
 
 	#plot windows
-	for _,w in windows:
-		arr = dw_reader.read(1,window=w)
+	for _,w in s2_windows:
+		b = s2_reader[0].read(1,window=w)
+		g = s2_reader[1].read(1,window=w)
+		r = s2_reader[2].read(1,window=w)
 		arr3 = np.stack([arr,np.zeros_like(arr),np.zeros_like(arr)],axis=0)
 
 #TODO
@@ -912,13 +909,20 @@ def plot_tci_windowed(dst_path,bands,borders,windows):
 	px_cols = borders['right'] - borders['left'] + 1
 	px_rows_blocks = px_rows - (px_rows % CHIP_SIZE - 1)
 	px_cols_blocks = px_cols - (px_cols % CHIP_SIZE -1)
-
-
-
 	return True
 
 #TODO
-def save_tci_window(path,bands,offsets,window):
+def plot_tci_window(path,bands,window,pctiles=[10000,10000,10000]):
+	b,g,r = (_.read(1,window=window) for _ in bands)
+
+	out_kwargs = bands[0].meta.copy()
+	out_kwargs.update({
+		'count':3,
+		'driver':'JP2OpenJPEG','coded':'J2K',
+		'tiled':True,'blockxsize':CHIP_SIZE,'blockysize':CHIP_SIZE,
+		'dtype':'uint8'
+		})
+
 	return
 #---------------------------------------
 #TODO
@@ -983,7 +987,7 @@ def check_band_window(arr: ndarray):
 	return True
 
 #TODO
-def process_window(w: Window, ):
+def process_window(w: Window):
 	pass
 
 
@@ -1104,11 +1108,8 @@ def process_product(safe_dir: str):
 	band4 = rio.open(band_paths[2],'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
 	band8 = rio.open(band_paths[3],'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
 
-	#4.DW READER -> BOUNDARIES DW
-	label_borders = remove_label_borders(label)
-
-	#5.BOUNDARIES DW, (1) BAND READER -> BOUNDARIES S2 -- EQUATE S2 & DW BOUNDS
-	input_borders = convert_bounds(label,band2,label_borders)
+	#4.BOUNDARIES
+	input_borders,label_borders = align(band2,label)
 
 	#6.BOUNDARIES S2, BOUNDARIES DW -> WINDOWS DW, WINDOWS S2
 	input_windows = get_windows(input_borders)
@@ -1126,10 +1127,6 @@ def process_product(safe_dir: str):
 		DATE_DSTRIP_ROTATION_TILE_ROW_COL
 	'''
 
-#TODO
-def check_product_overlaps():
-	pass
-
 ####################################################################################################
 # MAIN
 ####################################################################################################
@@ -1138,7 +1135,7 @@ if __name__ == '__main__':
 
 	#.SAFE folders in data directory
 	folders = [d for d in os.listdir(DATA_DIR) if d[-5:]=='.SAFE']
-	# prods   = [load_product(f) for f in folders]
+	s2_rdr,s2_bnd,dw_rdr,dw_bnd = load_product(0)
 
 	folder_check()
 
