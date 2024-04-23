@@ -38,6 +38,7 @@ CHIP_DIR  = DATA_DIR + '/chp'
 CHIP_SIZE = 256
 WATER_MIN = 128*64
 WATER_MAX = CHIP_SIZE*CHIP_SIZE-WATER_MIN
+BAD_PX    = 0
 
 ####################################################################################################
 # BAND ARITHMETIC
@@ -513,7 +514,7 @@ def folder_check(drop_tiles=True):
 #---------------------------------------
 def plot_label_multiclass(path,dw_reader,dw_borders):
 	"""
-	Plots the whole label raster with nodata borders removed.
+	Plot the whole label raster.
 	"""
 	DW_NAMES_10 = ['masked','water','trees','grass','flooded_vegetation',
 		'crops','shrub_and_scrub','built','bare','snow_and_ice'];
@@ -522,7 +523,7 @@ def plot_label_multiclass(path,dw_reader,dw_borders):
 	    'dfc35a','c4281b','a59b8f','b39fe1'];
 
 
-	# number of rows and cols takin' the boundaries into acct
+	# px rows/cols following aligned boundaries
 	h = dw_borders['bottom'] + 1 - dw_borders['top']
 	w = dw_borders['right'] + 1 - dw_borders['left']
 	read_window = Window(borders['left'],borders['top'],w,h)
@@ -547,25 +548,25 @@ def plot_label_multiclass(path,dw_reader,dw_borders):
 	dst.close()
 
 
-def plot_label_multiclass_windowed(path,dw_reader,borders,windows):
+def plot_label_multiclass_windows(path,dw_reader,dw_borders,dw_windows):
 	'''
-	Plots the whole label raster using windows. Data beyond the windows is not plotted.
+	Plot whole label raster using windows. Data beyond windows not plotted.
 	'''
 	DW_PALETTE_10 = ['000000','419bdf','397d49','88b053','7a87c6','e49635', 
 	    'dfc35a','c4281b','a59b8f','b39fe1'];
 
 	#height
-	height = borders['bottom'] + 1 - borders['top']
-	width  = borders['right'] + 1 - borders['left']
-	height = height - (height % CHIP_SIZE) + 1 #not sure if safe
-	width = width - (width % CHIP_SIZE) + 1
+	height = dw_borders['bottom'] + 1 - dw_borders['top']
+	width  = dw_borders['right'] + 1 - dw_borders['left']
+	windows_height = height - (height % CHIP_SIZE) + 1 #not sure if safe
+	windows_width  = width - (width % CHIP_SIZE) + 1
 
 	#writer config
 	kwargs = dw_reader.meta.copy()
-	kwargs.update({'height':height,'width':width,'count':3,'compress':'lzw'})
+	kwargs.update({'height':windows_height,'width':windows_width,'count':3,'compress':'lzw'})
 	dst = rio.open(path,'w',**kwargs)
 
-	for _,w in windows:
+	for _,w in dw_windows:
 
 		# change array values -- single to 3-band 10-class
 		arr1 = dw_reader.read(1,window=w)
@@ -581,19 +582,11 @@ def plot_label_multiclass_windowed(path,dw_reader,borders,windows):
 
 	dst.close()
 
-#TODO
-def plot_label_singleclass_windowed():
-	'''
-	Plot whole label with 2 classes as black and white. Need for paper print. 
-	'''
-	pass
 
-
-def plot_label_checkerboard(path,dw_reader,borders,windows):
+def plot_label_grid(path,dw_reader,borders,windows):
 	"""
-	Plot whole label raster with overlaying squares corresponding to
-	to windows and chips. Red squares are chips discarded, yellow
-	squares are chips kept.
+	Plot full/original-size label raster. Overlay windows, S2 tile overlaps lines.
+	Red squares are chips discarded, yellow squares are chips kept.
 	"""
 	DW_PALETTE_10 = ['000000','419bdf','397d49','88b053','7a87c6','e49635', 
 	    'dfc35a','c4281b','a59b8f','b39fe1'];
@@ -609,12 +602,14 @@ def plot_label_checkerboard(path,dw_reader,borders,windows):
 	#NEW SIZE OF 
 	height = borders['bottom'] - borders['top'] + 1
 	width  = borders['right'] - borders['left'] + 1
+	windows_height = height - (height % CHIP_SIZE) + 1
+	windows_width  = width - (width % CHIP_SIZE) + 1
 
 	#WRITER
 	kwargs = dw_reader.meta.copy()
 	kwargs.update({
-		'count':3,'compress':'lzw','height':height,'width':width,
-		'tiled':True,'blockxsize':256,'blockysize':256})
+		'count':3,'compress':'lzw','height':dw_reader.height,'width':dw_reader.width,
+		'tiled':True,'blockxsize':CHIP_SIZE,'blockysize':CHIP_SIZE})
 	out_ptr = rio.open(path,'w',**kwargs)
 
 	correct_count = 0
@@ -632,7 +627,7 @@ def plot_label_checkerboard(path,dw_reader,borders,windows):
 			arr3[:,arr==c] = [[r],[g],[b]]	
 
 		#LINES
-		if (arr==0).sum() > 4:
+		if (arr==0).sum() > BAD_PX:
 			for i in range(3):
 				arr3[:,i,:]      = red_line #top
 				arr3[:,-(i+1),:] = red_line #bottom
@@ -658,8 +653,9 @@ def plot_label_checkerboard(path,dw_reader,borders,windows):
 					arr3[:,:,-(i+1)] = red_line #right
 
 		#adjust window:pos in reader to pos in writer
-		w2 = Window(w.col_off-borders['left'],w.row_off-borders['top'],CHIP_SIZE,CHIP_SIZE)
-		
+		# w2 = Window(w.col_off-borders['left'],w.row_off-borders['top'],CHIP_SIZE,CHIP_SIZE)
+		w2 = 
+
 		#WRITE
 		out_ptr.write(arr3,window=w2,indexes=[1,2,3])
 
@@ -714,6 +710,13 @@ def plot_label_checkerboard(path,dw_reader,borders,windows):
 		b = int(DW_PALETTE_10[c][4:6],16)
 		arr3[:,arr==c] = [[r],[g],[b]]
 	out_ptr.write(arr3,window=writer_window,indexes=[1,2,3])
+
+#TODO
+def plot_label_singleclass_windowed():
+	'''
+	Plot whole label with 2 classes as black and white. Need for paper print. 
+	'''
+	pass
 
 #TODO
 def plot_rgb_checkerboard(path,s2_id):
@@ -988,6 +991,9 @@ def check_band_window(arr: ndarray):
 
 #TODO
 def process_window(w: Window):
+	'''
+	I suppose this was meant to be the window check as a separate func
+	'''
 	pass
 
 
@@ -1135,7 +1141,7 @@ if __name__ == '__main__':
 
 	#.SAFE folders in data directory
 	folders = [d for d in os.listdir(DATA_DIR) if d[-5:]=='.SAFE']
-	s2_rdr,s2_bnd,dw_rdr,dw_bnd = load_product(0)
+	# s2_rdr,s2_bnd,dw_rdr,dw_bnd = load_product(folders[0])
 
 	folder_check()
 
