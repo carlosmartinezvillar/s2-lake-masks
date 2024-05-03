@@ -513,7 +513,7 @@ def folder_check(drop_tiles=True):
 #---------------------------------------
 def plot_label_multiclass(path,dw_reader,dw_borders):
 	"""
-	Plot the whole label raster.
+	Plot the workable area (overlap + no data removed)
 	"""
 	DW_NAMES_10 = ['masked','water','trees','grass','flooded_vegetation',
 		'crops','shrub_and_scrub','built','bare','snow_and_ice'];
@@ -549,7 +549,7 @@ def plot_label_multiclass(path,dw_reader,dw_borders):
 
 def plot_label_multiclass_windows(path,dw_reader,dw_borders,dw_windows):
 	'''
-	Plot whole label raster using windows. Data beyond windows not plotted.
+	Plot the workable area that overlaps with windows. Data beyond windows not plotted (fastest).
 	'''
 	DW_PALETTE_10 = ['000000','419bdf','397d49','88b053','7a87c6','e49635', 
 	    'dfc35a','c4281b','a59b8f','b39fe1'];
@@ -567,7 +567,7 @@ def plot_label_multiclass_windows(path,dw_reader,dw_borders,dw_windows):
 
 	for _,w in dw_windows:
 
-		# change array values -- single to 3-band 10-class
+		# change array values -- single to 3-bands and 10-class
 		arr1 = dw_reader.read(1,window=w)
 		arr3 = np.stack([arr1,np.zeros_like(arr1),np.zeros_like(arr1)],axis=0)
 		for c in range(10):
@@ -584,8 +584,8 @@ def plot_label_multiclass_windows(path,dw_reader,dw_borders,dw_windows):
 
 def plot_label_grid(path,dw_reader,borders,windows):
 	"""
-	Plot full/original-size label raster. Overlay windows, S2 tile overlaps lines.
-	Red squares are chips discarded, yellow squares are chips kept.
+	Plot workable area and overlay windows. Red squares are discarded chips, yellow squares are 
+	chips kept.
 	"""
 	DW_PALETTE_10 = ['000000','419bdf','397d49','88b053','7a87c6','e49635', 
 	    'dfc35a','c4281b','a59b8f','b39fe1'];
@@ -711,12 +711,13 @@ def plot_label_grid(path,dw_reader,borders,windows):
 		arr3[:,arr==c] = [[r],[g],[b]]
 	out_ptr.write(arr3,window=writer_window,indexes=[1,2,3])
 
-#TODO
+#TODO <-- 
 def plot_label_singleclass_windowed():
 	'''
-	Plot whole label with 2 classes as black and white. Need for paper print. 
+	Plot workable area windows. 2 classes black and white (paper print).
 	'''
 	pass
+
 
 #TODO
 def plot_rgb_checkerboard(path,s2_id):
