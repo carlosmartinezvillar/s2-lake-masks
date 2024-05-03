@@ -36,8 +36,8 @@ CHIP_DIR  = DATA_DIR + '/chp'
 
 #The important ones
 CHIP_SIZE = 256
-WATER_MIN = 128*64
-WATER_MAX = CHIP_SIZE*CHIP_SIZE-WATER_MIN
+WATER_MIN = 128*64 #arbitrarily set to 1/8 of the image
+WATER_MAX = CHIP_SIZE*CHIP_SIZE-WATER_MIN #balanced
 BAD_PX    = 0
 
 ####################################################################################################
@@ -367,10 +367,9 @@ def align(s2_src,dw_src):
 def get_windows(borders: dict) -> [Tuple]:
 	'''
 	Given a dicts of boundaries, returns an array list with tuples (i,j) for block indices i,j and 
-	window objects corresponding to the block i,j while taking into consideration only the area of the raster
-	within the boundaries defined by the indices in the borders dict. For exam-
-	ple, if the array had two rows and a column of no data on the left and top, 
-	the blocks would be offset and defined as:
+	window objects corresponding to the block i,j while considering only the area of the raster
+	within the boundaries defined by the indices in the dict. For example, if the array had two rows
+	and a column of no data (top and left) the blocks are offseted and defined as:
 
 			    left    256     512
 				| 0 0 0 0 ..
@@ -599,10 +598,10 @@ def plot_label_grid(path,dw_reader,borders,windows):
 	red_line[0]      = 65535
 	red_line[1:2]    = 0
 
-	#NEW SIZE OF 
-	height = borders['bottom'] - borders['top'] + 1
+	#SIZE OF WELL-FORMATED AREA AND SIZE OF WINDOWS AREA
+	height = borders['bottom'] - borders['top'] + 1 #readable area
 	width  = borders['right'] - borders['left'] + 1
-	windows_height = height - (height % CHIP_SIZE) + 1
+	windows_height = height - (height % CHIP_SIZE) + 1 #window area
 	windows_width  = width - (width % CHIP_SIZE) + 1
 
 	#WRITER
@@ -652,14 +651,13 @@ def plot_label_grid(path,dw_reader,borders,windows):
 					arr3[:,:,i]      = red_line #left
 					arr3[:,:,-(i+1)] = red_line #right
 
-		#adjust window:pos in reader to pos in writer
-		# w2 = Window(w.col_off-borders['left'],w.row_off-borders['top'],CHIP_SIZE,CHIP_SIZE)
-		w2 = 
+		#reader win position to writer win pos (i.e. top-left corner back to (0,0)).
+		w2 = Window(w.col_off-borders['left'],w.row_off-borders['top'],CHIP_SIZE,CHIP_SIZE)
 
-		#WRITE
+		#WRITE window
 		out_ptr.write(arr3,window=w2,indexes=[1,2,3])
 
-	print("Nr of good chips in raster: %i" % correct_count)
+	print("Good chips in raster: %i" % correct_count)
 
 	#PLOT REMAINING IMAGE BEYOND WINDOWS
 	block_rows     = height // CHIP_SIZE
@@ -667,7 +665,7 @@ def plot_label_grid(path,dw_reader,borders,windows):
 	remainder_rows = height % CHIP_SIZE
 	remainder_cols = width % CHIP_SIZE
 
-	#bottom edge
+	#bottom remainer (outside windwos)
 	reader_window = Window(
 		col_off=borders['left'],
 		row_off=borders['top']+block_rows*CHIP_SIZE,
@@ -680,6 +678,7 @@ def plot_label_grid(path,dw_reader,borders,windows):
 		width=block_cols*CHIP_SIZE,
 		height=remainder_rows) #writer,starts at 0,0
 
+	#read,adjust,write
 	arr = dw_reader.read(1,window=reader_window)
 	arr3 = np.stack([arr,np.zeros_like(arr),np.zeros_like(arr)],axis=0)
 	for c in range(10):
@@ -689,7 +688,7 @@ def plot_label_grid(path,dw_reader,borders,windows):
 		arr3[:,arr==c] = [[r],[g],[b]]
 	out_ptr.write(arr3,window=writer_window,indexes=[1,2,3])
 
-	#right edge
+	#right remainder (outside windows)
 	reader_window = Window(
 		col_off=borders['left']+block_cols*CHIP_SIZE,
 		row_off=borders['top'],
@@ -702,6 +701,7 @@ def plot_label_grid(path,dw_reader,borders,windows):
 		width=remainder_cols,
 		height=height) #writer, starts at 0,0
   
+  	#read, adjust, write
 	arr = dw_reader.read(1,window=reader_window)
 	arr3 = np.stack([arr,np.zeros_like(arr),np.zeros_like(arr)],axis=0)
 	for c in range(10):
