@@ -736,7 +736,7 @@ def plot_label_grid(path,dw_reader,borders,windows):
 #TODO <-- 
 def plot_label_singleclass_windows(path,dw_reader,dw_borders,dw_windows):
 	'''
-	Plot workable area that intersects windows. Black and white classes (paper print).
+	Plot workable area overlapping windows. Black and white classes.
 	'''
 	h = dw_borders['bottom'] + 1 - dw_borders['top']
 	w = dw_borders['right'] + 1 - dw_borders['left']
@@ -747,7 +747,7 @@ def plot_label_singleclass_windows(path,dw_reader,dw_borders,dw_windows):
 	kwargs.update({'height':windows_height,'width':windows_width,'count':3,'compress':'lzw'})
 	out_ptr = rio.open(path,'w',**kwargs)
 
-	for idx,w in dw_windows:
+	for _,w in dw_windows:
 		#read
 		arr = dw_reader.read(1,window=w)
 		white_mask = arr == 1 #water
@@ -756,8 +756,8 @@ def plot_label_singleclass_windows(path,dw_reader,dw_borders,dw_windows):
 
 		#change
 		arr[white_mask] = 255
-		arr[gray_mask]  = 128
 		arr[black_mask] = 0
+		arr[gray_mask]  = 128
 		arr_3d = np.repeat(arr[np.newaxis,:,:],repeats=3,axis=0)
 
 		#write
