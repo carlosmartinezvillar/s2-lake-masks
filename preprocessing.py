@@ -513,7 +513,7 @@ def folder_check(drop_tiles=True):
 #---------------------------------------
 def plot_label_multiclass(path,dw_reader,dw_borders):
 	"""
-	Plot the workable area (overlap + no data removed)
+	Plot the workable area (removed both tile overlap & no-data).
 	"""
 	DW_NAMES_10 = ['masked','water','trees','grass','flooded_vegetation',
 		'crops','shrub_and_scrub','built','bare','snow_and_ice'];
@@ -522,7 +522,7 @@ def plot_label_multiclass(path,dw_reader,dw_borders):
 	    'dfc35a','c4281b','a59b8f','b39fe1'];
 
 
-	# px rows/cols following aligned boundaries
+	# px rows/cols workable area
 	h = dw_borders['bottom'] + 1 - dw_borders['top']
 	w = dw_borders['right'] + 1 - dw_borders['left']
 	read_window = Window(borders['left'],borders['top'],w,h)
@@ -547,22 +547,23 @@ def plot_label_multiclass(path,dw_reader,dw_borders):
 	dst.close()
 
 
-def plot_label_multiclass_windows(path,dw_reader,dw_borders,dw_windows):
+def plot_label_multiclass_windows(path,dw_reader,dw_borders,dw_windows): #<<< fix out window
 	'''
-	Plot the workable area that overlaps with windows. Data beyond windows not plotted (fastest).
+	Plot workable area overlapping windows (data beyond windows not plotted). Window frames not 
+	plotted.
 	'''
 	DW_PALETTE_10 = ['000000','419bdf','397d49','88b053','7a87c6','e49635', 
 	    'dfc35a','c4281b','a59b8f','b39fe1'];
 
-	#height
-	height = dw_borders['bottom'] + 1 - dw_borders['top']
-	width  = dw_borders['right'] + 1 - dw_borders['left']
-	windows_height = height - (height % CHIP_SIZE) + 1 #not sure if safe
-	windows_width  = width - (width % CHIP_SIZE) + 1
+	#height,width -- the window area
+	h = dw_borders['bottom'] + 1 - dw_borders['top']
+	w = dw_borders['right'] + 1 - dw_borders['left']
+	windows_h = h - (h % CHIP_SIZE) + 1 #not sure if safe
+	windows_w = w - (w % CHIP_SIZE) + 1
 
 	#writer config
 	kwargs = dw_reader.meta.copy()
-	kwargs.update({'height':windows_height,'width':windows_width,'count':3,'compress':'lzw'})
+	kwargs.update({'height':windows_h,'width':windows_w,'count':3,'compress':'lzw'})
 	dst = rio.open(path,'w',**kwargs)
 
 	for _,w in dw_windows:
@@ -577,6 +578,8 @@ def plot_label_multiclass_windows(path,dw_reader,dw_borders,dw_windows):
 			arr3[:,arr1==c] = [[r],[g],[b]]
 
 		#write window in dst image
+		w_window = Window(w.col_off-borders['left'],w.row_off-borders['top'],CHIP_SIZE,CHIP_SIZE)
+
 		dst.write(arr3,window=w,indexes=[1,2,3])
 
 	dst.close()
@@ -586,6 +589,17 @@ def plot_label_grid(path,dw_reader,borders,windows):
 	"""
 	Plot workable area and overlay windows. Red squares are discarded chips, yellow squares are 
 	chips kept.
+
+		+--+--+--+---+
+		|  |  |  |   |
+		+--+--+--+   +
+		|  |  |  |   |
+		+--+--+--+ r +
+		|  |  |  |   |
+		+--+--+--+   +
+		|   r    |   |
+		+--------+---+
+
 	"""
 	DW_PALETTE_10 = ['000000','419bdf','397d49','88b053','7a87c6','e49635', 
 	    'dfc35a','c4281b','a59b8f','b39fe1'];
@@ -599,7 +613,7 @@ def plot_label_grid(path,dw_reader,borders,windows):
 	red_line[1:2]    = 0
 
 	#SIZE OF WELL-FORMATED AREA AND SIZE OF WINDOWS AREA
-	height = borders['bottom'] - borders['top'] + 1 #readable area
+	height = borders['bottom'] - borders['top'] + 1 #readable/workable area
 	width  = borders['right'] - borders['left'] + 1
 	windows_height = height - (height % CHIP_SIZE) + 1 #window area
 	windows_width  = width - (width % CHIP_SIZE) + 1
@@ -613,7 +627,8 @@ def plot_label_grid(path,dw_reader,borders,windows):
 
 	correct_count = 0
 
-	#FOR EACH WINDOW PLOT SQUARES
+	#1. PLOT SQUARES FOR EACH WINDOW
+	#-------------------------------
 	for _,w in windows:
 		# single to 3-band 10-class
 		arr = dw_reader.read(1,window=w)
@@ -627,6 +642,7 @@ def plot_label_grid(path,dw_reader,borders,windows):
 
 		#LINES
 		if (arr==0).sum() > BAD_PX:
+			#set borders red
 			for i in range(3):
 				arr3[:,i,:]      = red_line #top
 				arr3[:,-(i+1),:] = red_line #bottom
@@ -637,6 +653,7 @@ def plot_label_grid(path,dw_reader,borders,windows):
 			n_water = (arr==1).sum()
 
 			if n_water > WATER_MIN  and n_water < WATER_MAX:
+				#set borders yellow
 				for i in range(3):
 					arr3[:,i,:]      = yellow_line #top
 					arr3[:,-(i+1),:] = yellow_line #bottom
@@ -651,32 +668,35 @@ def plot_label_grid(path,dw_reader,borders,windows):
 					arr3[:,:,i]      = red_line #left
 					arr3[:,:,-(i+1)] = red_line #right
 
-		#reader win position to writer win pos (i.e. top-left corner back to (0,0)).
-		w2 = Window(w.col_off-borders['left'],w.row_off-borders['top'],CHIP_SIZE,CHIP_SIZE)
+		#reader win position to writer win pos (top-left corner shift to (0,0)).
+		# w2 = Window(w.col_off-borders['left'],w.row_off-borders['top'],CHIP_SIZE,CHIP_SIZE)
 
-		#WRITE window
-		out_ptr.write(arr3,window=w2,indexes=[1,2,3])
+		#WRITE (window)
+		# out_ptr.write(arr3,window=w2,indexes=[1,2,3])
+		out_ptr.write(arr3,window=w,indexes=[1,2,3]) #when out size same as the very original
 
 	print("Good chips in raster: %i" % correct_count)
 
-	#PLOT REMAINING IMAGE BEYOND WINDOWS
+	#2.PLOT REMAINING IMAGE BEYOND WINDOWS
+	#-----------------------------------	
 	block_rows     = height // CHIP_SIZE
 	block_cols     = width // CHIP_SIZE
 	remainder_rows = height % CHIP_SIZE
 	remainder_cols = width % CHIP_SIZE
 
-	#bottom remainer (outside windwos)
+	#bottom remainder (outside windows)
 	reader_window = Window(
 		col_off=borders['left'],
 		row_off=borders['top']+block_rows*CHIP_SIZE,
 		width=block_cols*CHIP_SIZE,
 		height=remainder_rows) #reader,starts at border['top'],borders['left']
 
-	writer_window = Window(
-		col_off=0,
-		row_off=block_rows*CHIP_SIZE,
-		width=block_cols*CHIP_SIZE,
-		height=remainder_rows) #writer,starts at 0,0
+	# writer_window = Window(
+	# 	col_off=0,
+	# 	row_off=block_rows*CHIP_SIZE,
+	# 	width=block_cols*CHIP_SIZE,
+	# 	height=remainder_rows) #writer,starts at 0,0
+
 
 	#read,adjust,write
 	arr = dw_reader.read(1,window=reader_window)
@@ -686,7 +706,8 @@ def plot_label_grid(path,dw_reader,borders,windows):
 		g = int(DW_PALETTE_10[c][2:4],16)
 		b = int(DW_PALETTE_10[c][4:6],16)
 		arr3[:,arr==c] = [[r],[g],[b]]
-	out_ptr.write(arr3,window=writer_window,indexes=[1,2,3])
+	# out_ptr.write(arr3,window=writer_window,indexes=[1,2,3])
+	out_ptr.write(arr3,window=reader_window,indexes=[1,2,3]) #<--- no shift to smaller output
 
 	#right remainder (outside windows)
 	reader_window = Window(
@@ -695,11 +716,11 @@ def plot_label_grid(path,dw_reader,borders,windows):
 		width = remainder_cols,
 		height = height)
 
-	writer_window = Window(
-		col_off=block_cols*CHIP_SIZE,
-		row_off=0,
-		width=remainder_cols,
-		height=height) #writer, starts at 0,0
+	# writer_window = Window(
+	# 	col_off=block_cols*CHIP_SIZE,
+	# 	row_off=0,
+	# 	width=remainder_cols,
+	# 	height=height) #writer, starts at 0,0
   
   	#read, adjust, write
 	arr = dw_reader.read(1,window=reader_window)
@@ -709,14 +730,38 @@ def plot_label_grid(path,dw_reader,borders,windows):
 		g = int(DW_PALETTE_10[c][2:4],16)
 		b = int(DW_PALETTE_10[c][4:6],16)
 		arr3[:,arr==c] = [[r],[g],[b]]
-	out_ptr.write(arr3,window=writer_window,indexes=[1,2,3])
+	# out_ptr.write(arr3,window=writer_window,indexes=[1,2,3])
+	out_ptr.write(arr3,window=reader_window,indexes=[1,2,3]) #<--- no shift to smaller output
 
 #TODO <-- 
-def plot_label_singleclass_windowed():
+def plot_label_singleclass_windows(path,dw_reader,dw_borders,dw_windows):
 	'''
-	Plot workable area windows. 2 classes black and white (paper print).
+	Plot workable area that intersects windows. Black and white classes (paper print).
 	'''
-	pass
+	h = dw_borders['bottom'] + 1 - dw_borders['top']
+	w = dw_borders['right'] + 1 - dw_borders['left']
+	windows_height = height - (height % CHIP_SIZE) + 1 #not sure if safe
+	windows_width  = width - (width % CHIP_SIZE) + 1	
+
+	kwargs = dw_reader.meta.copy()
+	kwargs.update({'height':windows_height,'width':windows_width,'count':3,'compress':'lzw'})
+	out_ptr = rio.open(path,'w',**kwargs)
+
+	for idx,w in dw_windows:
+		#read
+		arr = dw_reader.read(1,window=w)
+		white_mask = arr == 1 #water
+		gray_mask  = arr == 0 #nodata
+		black_mask = ~(white_mask | gray_mask) #else
+
+		#change
+		arr[white_mask] = 255
+		arr[gray_mask]  = 128
+		arr[black_mask] = 0
+		arr_3d = np.repeat(arr[np.newaxis,:,:],repeats=3,axis=0)
+
+		#write
+		out_ptr.write(arr3,window=w)
 
 
 #TODO
@@ -916,7 +961,7 @@ def plot_tci_windowed(dst_path,bands,borders,windows):
 	return True
 
 #TODO
-def plot_tci_window(path,bands,window,pctiles=[10000,10000,10000]):
+def plot_tci_window(path,bands,window):
 	b,g,r = (_.read(1,window=window) for _ in bands)
 
 	out_kwargs = bands[0].meta.copy()
