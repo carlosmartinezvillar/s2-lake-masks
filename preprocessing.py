@@ -37,7 +37,7 @@ CHIP_DIR  = DATA_DIR + '/chp'
 #The important ones
 CHIP_SIZE = 256
 WATER_MIN = 128*64 #arbitrarily set to 1/8 of the image
-WATER_MAX = CHIP_SIZE*CHIP_SIZE-WATER_MIN #balanced
+WATER_MAX = CHIP_SIZE*CHIP_SIZE-WATER_MIN#balanced
 BAD_PX    = 0
 
 ####################################################################################################
@@ -580,7 +580,7 @@ def plot_label_multiclass_windows(path,dw_reader,dw_borders,dw_windows): #<<< fi
 		#write window in dst image
 		w_window = Window(w.col_off-borders['left'],w.row_off-borders['top'],CHIP_SIZE,CHIP_SIZE)
 
-		dst.write(arr3,window=w,indexes=[1,2,3])
+		dst.write(arr3,window=w_window,indexes=[1,2,3])
 
 	dst.close()
 
@@ -590,27 +590,31 @@ def plot_label_grid(path,dw_reader,borders,windows):
 	Plot workable area and overlay windows. Red squares are discarded chips, yellow squares are 
 	chips kept.
 
-		+--+--+--+---+
-		|  |  |  |   |
-		+--+--+--+   +
-		|  |  |  |   |
-		+--+--+--+ r +
-		|  |  |  |   |
-		+--+--+--+   +
-		|   r    |   |
-		+--------+---+
+		1.windows
+		+---+---+---+---+
+		|   |   |   |   |
+		+---+---+---+   +
+		|   |   |   |   |
+		+---+---+---+   + 3.right remainder
+		|   |   |   |   |
+		+---+---+---+   +
+		|           |   |
+		+-----------+---+
+		2.bottom remainder
 
 	"""
 	DW_PALETTE_10 = ['000000','419bdf','397d49','88b053','7a87c6','e49635', 
 	    'dfc35a','c4281b','a59b8f','b39fe1'];
 
 	#Get lines -- red FF0000, yellow FFFF00
-	yellow_line      = np.ones((3,CHIP_SIZE))
-	yellow_line[0:2] = 65535
-	yellow_line[2]   = 0
-	red_line         = np.ones((3,CHIP_SIZE))
-	red_line[0]      = 65535
-	red_line[1:2]    = 0
+	yellow_line    = np.ones((3,CHIP_SIZE))
+	yellow_line[0] = 65535
+	yellow_line[1] = 65535
+	yellow_line[2] = 0
+	red_line       = np.ones((3,CHIP_SIZE))
+	red_line[0]    = 65535
+	red_line[1]    = 0
+	red_line[2]    = 0
 
 	#SIZE OF WELL-FORMATED AREA AND SIZE OF WINDOWS AREA
 	height = borders['bottom'] - borders['top'] + 1 #readable/workable area
@@ -652,7 +656,7 @@ def plot_label_grid(path,dw_reader,borders,windows):
 		else:			
 			n_water = (arr==1).sum()
 
-			if n_water > WATER_MIN  and n_water < WATER_MAX:
+			if n_water > WATER_MIN  and n_water <= WATER_MAX:
 				#set borders yellow
 				for i in range(3):
 					arr3[:,i,:]      = yellow_line #top
@@ -672,24 +676,24 @@ def plot_label_grid(path,dw_reader,borders,windows):
 		# w2 = Window(w.col_off-borders['left'],w.row_off-borders['top'],CHIP_SIZE,CHIP_SIZE)
 
 		#WRITE (window)
-		# out_ptr.write(arr3,window=w2,indexes=[1,2,3])
-		out_ptr.write(arr3,window=w,indexes=[1,2,3]) #when out size same as the very original
+		# out_ptr.write(arr3,window=w2,indexes=[1,2,3]) #if out_ptr size < original
+		out_ptr.write(arr3,window=w,indexes=[1,2,3]) #if out_ptr size == original
 
-	print("Good chips in raster: %i" % correct_count)
-
-	#2.PLOT REMAINING IMAGE BEYOND WINDOWS
+	#-----------------------------------
+	#PLOT REMAINING IMAGE BEYOND WINDOWS
 	#-----------------------------------	
 	block_rows     = height // CHIP_SIZE
 	block_cols     = width // CHIP_SIZE
 	remainder_rows = height % CHIP_SIZE
 	remainder_cols = width % CHIP_SIZE
 
-	#bottom remainder (outside windows)
+	#2. BOTTOM REMAINDER (outside windows)
+	#-------------------------------------	
 	reader_window = Window(
 		col_off=borders['left'],
 		row_off=borders['top']+block_rows*CHIP_SIZE,
 		width=block_cols*CHIP_SIZE,
-		height=remainder_rows) #reader,starts at border['top'],borders['left']
+		height=remainder_rows)
 
 	# writer_window = Window(
 	# 	col_off=0,
@@ -706,10 +710,11 @@ def plot_label_grid(path,dw_reader,borders,windows):
 		g = int(DW_PALETTE_10[c][2:4],16)
 		b = int(DW_PALETTE_10[c][4:6],16)
 		arr3[:,arr==c] = [[r],[g],[b]]
-	# out_ptr.write(arr3,window=writer_window,indexes=[1,2,3])
-	out_ptr.write(arr3,window=reader_window,indexes=[1,2,3]) #<--- no shift to smaller output
+	# out_ptr.write(arr3,window=writer_window,indexes=[1,2,3]) #out_ptr size < original
+	out_ptr.write(arr3,window=reader_window,indexes=[1,2,3]) #<--- out_ptr size == original
 
-	#right remainder (outside windows)
+	#3. RIGHT REMAINDER (outside windows)
+	#-------------------------------------	
 	reader_window = Window(
 		col_off=borders['left']+block_cols*CHIP_SIZE,
 		row_off=borders['top'],
@@ -730,18 +735,20 @@ def plot_label_grid(path,dw_reader,borders,windows):
 		g = int(DW_PALETTE_10[c][2:4],16)
 		b = int(DW_PALETTE_10[c][4:6],16)
 		arr3[:,arr==c] = [[r],[g],[b]]
-	# out_ptr.write(arr3,window=writer_window,indexes=[1,2,3])
-	out_ptr.write(arr3,window=reader_window,indexes=[1,2,3]) #<--- no shift to smaller output
+	# out_ptr.write(arr3,window=writer_window,indexes=[1,2,3]) #out_ptr size < original
+	out_ptr.write(arr3,window=reader_window,indexes=[1,2,3]) #<--- out_ptr size == original
 
-#TODO <-- 
+	print("Good chips in raster: %i/%i (label)" % (correct_count,block_rows*block_cols))
+
+
 def plot_label_singleclass_windows(path,dw_reader,dw_borders,dw_windows):
 	'''
 	Plot workable area overlapping windows. Black and white classes.
 	'''
 	h = dw_borders['bottom'] + 1 - dw_borders['top']
 	w = dw_borders['right'] + 1 - dw_borders['left']
-	windows_height = height - (height % CHIP_SIZE) + 1 #not sure if safe
-	windows_width  = width - (width % CHIP_SIZE) + 1	
+	windows_height = h - (h % CHIP_SIZE) + 1 #not sure if safe
+	windows_width  = w - (w % CHIP_SIZE) + 1	
 
 	kwargs = dw_reader.meta.copy()
 	kwargs.update({'height':windows_height,'width':windows_width,'count':3,'compress':'lzw'})
@@ -761,20 +768,26 @@ def plot_label_singleclass_windows(path,dw_reader,dw_borders,dw_windows):
 		arr_3d = np.repeat(arr[np.newaxis,:,:],repeats=3,axis=0)
 
 		#write
-		out_ptr.write(arr3,window=w)
-
+		out_window = Window(w.col_off-dw_borders['left'],w.row_off-dw_borders['top'],CHIP_SIZE,CHIP_SIZE)
+		out_ptr.write(arr_3d,window=out_window)
 
 #TODO
-def plot_rgb_checkerboard(path,s2_id):
+def plot_rgb_grid(path,s2_id):
+	'''
+	Plot workable area within originally-sized image and overlapping windows.
+	'''
 	s2_reader,s2_bounds,dw_reader,dw_bounds = load_product(s2_id)
 	s2_windows = get_windows(s2_bounds)
-	kwargs = band_reader[0].meta.copy()
+	dw_windows = get_windows(dw_bounds)
+
+	kwargs = s2_reader[0].meta.copy()
 	kwargs.update({
-		'count':3,
-		'driver':'JP2OpenJPEG','coded':'J2K',
+		'count':3,'height':s2_reader[0].height,'width':s2_reader[0].width,
+		'driver':'JP2OpenJPEG','codec':'J2K','photometric':'RGB',
 		'tiled':True,'blockxsize':CHIP_SIZE,'blockysize':CHIP_SIZE,
 		'dtype':'uint8'
 		})
+
 	out_ptr = rio.open(path,'w',**kwargs)
 
 	#plot whole thing 3-bands
@@ -782,14 +795,65 @@ def plot_rgb_checkerboard(path,s2_id):
 	tci   = np.stack([r,g,b],axis=0).clip(0,32767).astype(np.int16) #int16 [-32767,32767]
 
 	rgb_zeromask = tci == 0
+	and_zeromask = rgb_zeromask.all(axis=0)
 	percentile99 = np.array([np.percentile(b[~rgb_zeromask[i]],99) for i,b in enumerate(tci)])
+
+	yellow_line    = np.ones((3,CHIP_SIZE))
+	yellow_line[0] = 255
+	yellow_line[1] = 255
+	yellow_line[2] = 0
+	red_line       = np.ones((3,CHIP_SIZE))
+	red_line[0]    = 255
+	red_line[1]    = 0
+	red_line[2]    = 0
+
 
 	#plot windows
 	for _,w in s2_windows:
-		b = s2_reader[0].read(1,window=w)
-		g = s2_reader[1].read(1,window=w)
-		r = s2_reader[2].read(1,window=w)
-		arr3 = np.stack([arr,np.zeros_like(arr),np.zeros_like(arr)],axis=0)
+
+		arr3 = tci[:,w.row_off:w.row_off+CHIP_SIZE,w.col_off:w.col_off+CHIP_SIZE]
+
+		arr3[0] = np.clip(arr3[0],1,percentile99[0])
+		arr3[1] = np.clip(arr3[1],1,percentile99[1])
+		arr3[2] = np.clip(arr3[2],1,percentile99[2])
+
+		if and_zeromask[w.row_off:w.row_off+CHIP_SIZE,w.col_off:w.col_off+CHIP_SIZE].sum() > BAD_PX:
+			#no good -- plot red
+			# print("No data in RGB block %s" % str(_))
+			for i in range(3):
+				arr3[:,i,:]      = red_line #top
+				arr3[:,-(i+1),:] = red_line #bottom
+				arr3[:,:,i]      = red_line #left
+				arr3[:,:,-(i+1)] = red_line #right
+
+		# else:
+		# 	lbl_arr = dw_reader.read(1,window=dw_windows[k][1])
+		# 	if (lbl_arr == 0).sum() > BAD_PX:
+		# 		#no good, no data in label -- plot red
+		# 		for i in range(3):
+		# 			arr3[:,i,:]      = red_line #top
+		# 			arr3[:,-(i+1),:] = red_line #bottom
+		# 			arr3[:,:,i]      = red_line #left
+		# 			arr3[:,:,-(i+1)] = red_line #right
+		# 	else:
+		# 		n_water = (arr==1).sum()
+		# 		if n_water > WATER_MIN and n_water <= WATER_MAX:
+		# 			#good -- yellow
+		# 			for i in range(3):
+		# 				arr3[:,i,:]      = yellow_line #top
+		# 				arr3[:,-(i+1),:] = yellow_line #bottom
+		# 				arr3[:,:,i]      = yellow_line #left
+		# 				arr3[:,:,-(i+1)] = yellow_line #right
+		# 			correct_count += 1					
+		# 		else:
+		# 			# bad nr water -- red
+		# 			for i in range(3):
+		# 				arr3[:,i,:]      = red_line #top
+		# 				arr3[:,-(i+1),:] = red_line #bottom
+		# 				arr3[:,:,i]      = red_line #left
+		# 				arr3[:,:,-(i+1)] = red_line #right
+
+		out_ptr.write(arr3,window=w,indexes=[1,2,3])
 
 #TODO
 def plot_tci_masks(fname:str, bands:[rio.DatasetReader], offsets:[int], borders: dict) -> None:
@@ -1169,7 +1233,7 @@ def process_product(safe_dir: str):
 
 	#7.DO SOME CHECKs
 	# check_histograms(gee_id,band2,offsets[2],input_borders)
-	plot_tci_masks(gee_id+'_TCI',[band2,band3,band4],offsets[0:3],input_borders)
+	# plot_tci_masks(gee_id+'_TCI',[band2,band3,band4],offsets[0:3],input_borders)
 
 	#8.ITERATE THROUGH WINDOWS
 	pass	
@@ -1178,6 +1242,13 @@ def process_product(safe_dir: str):
 	FINAL ID should be: 
 		DATE_DSTRIP_ROTATION_TILE_ROW_COL
 	'''
+	rotation = safe_dir[33:37]
+	out_id   = gee_id + '_' + rotation
+
+	plot_label_grid('./fig/'+out_id+'_LABEL_GRID.tif',label,label_borders,label_windows)
+
+	plot_label_singleclass_windows('./fig/'+out_id+'LABEL.tif',label,label_borders,label_windows)
+
 
 ####################################################################################################
 # MAIN
@@ -1191,13 +1262,5 @@ if __name__ == '__main__':
 
 	folder_check()
 
-	# safe_dir = folders[2]
-
-	# if os.path.isfile('./dat/index_whole.txt'):
-	# 	products = []
-	# 	with open('./dat/index_whole.txt') as fp:
-	# 		for line in fp.readlines():
-	# 			col = line.rstrip().split('_')
-	# 			products += [(col[2],col[4],col[5].lstrip('T'),col[6].rstrip('.SAFE'))]
-	
-
+	# process_product(folders[0])
+	plot_rgb_grid('./fig/test_grid.jp2',folders[0])
