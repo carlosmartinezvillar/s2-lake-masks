@@ -776,48 +776,70 @@ def plot_rgb_grid(path,s2_id):
 	'''
 	Plot workable area within originally-sized image and overlapping windows.
 	'''
-	s2_reader,s2_bounds,dw_reader,dw_bounds = load_product(s2_id)
-	s2_windows = get_windows(s2_bounds)
-	dw_windows = get_windows(dw_bounds)
 
-	kwargs = s2_reader[0].meta.copy()
-	kwargs.update({
-		'count':3,'height':s2_reader[0].height,'width':s2_reader[0].width,
-		'driver':'JP2OpenJPEG','codec':'J2K','photometric':'RGB',
-		'tiled':True,'blockxsize':CHIP_SIZE,'blockysize':CHIP_SIZE,
-		'dtype':'uint8'
-		})
-
-	out_ptr = rio.open(path,'w',**kwargs)
-
-	#plot whole thing 3-bands
-	b,g,r = (_.read(1) for _ in s2_reader[0:3])
-	tci   = np.stack([r,g,b],axis=0).clip(0,32767).astype(np.int16) #int16 [-32767,32767]
-
-	rgb_zeromask = tci == 0
-	and_zeromask = rgb_zeromask.all(axis=0)
-	percentile99 = np.array([np.percentile(b[~rgb_zeromask[i]],99) for i,b in enumerate(tci)])
-
-	yellow_line    = np.ones((3,CHIP_SIZE))
+	yellow_line    = np.ones((3,CHIP_SIZE)) #good
 	yellow_line[0] = 255
 	yellow_line[1] = 255
 	yellow_line[2] = 0
-	red_line       = np.ones((3,CHIP_SIZE))
+	red_line       = np.ones((3,CHIP_SIZE)) #bad
 	red_line[0]    = 255
 	red_line[1]    = 0
 	red_line[2]    = 0
 
+	s2_readers,s2_bounds,dw_reader,dw_bounds = ready_product(s2_id)
+	s2_windows = get_windows(s2_bounds)
+	dw_windows = get_windows(dw_bounds)
+
+	h = s2_readers[0].height
+	w = s2_readers[0].width
+
+	kwargs = s2_readers[0].meta.copy()
+	kwargs.update({
+		'count':3,
+		'driver':'JP2OpenJPEG','codec':'J2K',
+		'height': h,'width': w,
+		'dtype':'uint8',
+		'tiled':True,'blockxsize':CHIP_SIZE,'blockysize':CHIP_SIZE,
+		})
+
+	out_ptr = rio.open(path,'w',**kwargs)
+
+	#load bands
+	b,g,r = (_.read(1) for _ in s2_readers[0:3])
+	tci   = np.stack([r,g,b],axis=0).clip(0,32767).astype(np.int16) #int16 [-32767,32767]
+
+	rgb_zero_mask = tci == 0
+	and_zero_mask = rgb_zero_mask.all(axis=0)
+	# percentile99 = np.array([np.percentile(b[~rgb_zeromask[i]],99) for i,b in enumerate(tci)])
+	# maxs         = []
+	# tci[0] = np.clip(tci[0],1,percentile99[0])
+	# tci[1] = np.clip(tci[1],1,percentile99[1])
+	# tci[2] = np.clip(tci[2],1,percentile99[2])
+	# for i,b in enumerate(tci):
+	# 	tci[i] = np.clip(b,1,np.percentile(b[~rgb_zero_mask[i],99])) #clip
+	# tci = minmax_normalize(tci,by_band=True) #norm
+	# tci[rgb_zero_mask] = 0 #set zeros back to zero
 
 	#plot windows
-	for _,w in s2_windows:
+	for k,(_,w) in enumerate(s2_windows):
 
-		arr3 = tci[:,w.row_off:w.row_off+CHIP_SIZE,w.col_off:w.col_off+CHIP_SIZE]
+		rgb_array = tci[:,w.row_off:w.row_off+CHIP_SIZE,w.col_off:w.col_off+CHIP_SIZE]
 
-		arr3[0] = np.clip(arr3[0],1,percentile99[0])
-		arr3[1] = np.clip(arr3[1],1,percentile99[1])
-		arr3[2] = np.clip(arr3[2],1,percentile99[2])
+		# CHECK LABEL ZEROES
+		lbl_array = dw_reader.read(1,window=dw_windows[k][1])
+		if (lbl_array == 0).any():
+			# SET BORDERS TO RED
+			for i in range(3):
+				rgb_array[:,i,:]      = red_line #top
+				rgb_array[:,-(i+1),:] = red_line #bottom
+				rgb_array[:,:,i]      = red_line #left
+				rgb_array[:,:,-(i+1)] = red_line #right
+			#PRINT & RETURN
+			
 
-		if and_zeromask[w.row_off:w.row_off+CHIP_SIZE,w.col_off:w.col_off+CHIP_SIZE].sum() > BAD_PX:
+		# CHECK RGB ZEROES
+
+		if and_zero_mask[w.row_off:w.row_off+CHIP_SIZE,w.col_off:w.col_off+CHIP_SIZE].sum() > BAD_PX:
 			#no good -- plot red
 			# print("No data in RGB block %s" % str(_))
 			for i in range(3):
@@ -1175,7 +1197,7 @@ def check_histograms(fname:str, band:rio.DatasetReader, offset:int, borders: dic
 	print("Band histogram saved to %s." % hist_path)
 
 
-def load_product(safe_dir:str) -> Tuple:
+def ready_product(safe_dir:str) -> Tuple:
 	'''
 	Do all the stuff needed before any step/plots
 	'''
