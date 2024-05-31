@@ -29,16 +29,16 @@ plt.style.use('fast')
 
 #DIRs and such
 DATA_DIR = os.getenv('DATA_DIR')
-if DATA_DIR is None:
-	DATA_DIR = './dat'
+if DATA_DIR is None:DATA_DIR = './dat'
 LABEL_DIR = DATA_DIR + '/dynamicworld'
 CHIP_DIR  = DATA_DIR + '/chp'
 
 #The important ones
 CHIP_SIZE = 256
-WATER_MIN = 6500 #arbitrarily set to 1/8 of the image
-WATER_MAX = CHIP_SIZE*CHIP_SIZE-WATER_MIN#balanced
-BAD_PX    = 0
+# WATER_MIN = 6554 #arbitrarily set to 1/8 of the image, ...or 10%?
+WATER_MIN = 128*64 #arbitrarily set to 1/8 of the image, ...or 10%?
+WATER_MAX = CHIP_SIZE*CHIP_SIZE-WATER_MIN #balanced
+BAD_PX    = 3276
 
 ####################################################################################################
 # BAND ARITHMETIC
@@ -70,7 +70,7 @@ def minmax_normalize(img: ndarray, by_band: bool=True) -> ndarray:
 		return (img - img.min()) / (img.max() - img.min())
 
 ####################################################################################################
-# HISTOGRAMS, ET CETERA
+# HISTOGRAMS
 ####################################################################################################
 def band_hist(path: str, band: ndarray, title: str, n_bins: int=4096, color: str='blue') -> None:
 	nonzeros = band[band!=0].flatten()
@@ -94,7 +94,7 @@ def multiband_hist(path: str, bands: [ndarray], title: str, n_bins: int=4096) ->
 	print("Multi-band plot saved to %s." % path)
 
 ####################################################################################################
-# PROCESSING STUFF
+# PARSING STUFF
 ####################################################################################################
 def parse_xml(path: str) -> Tuple[str, int, List[int]]:
 	'''
@@ -169,8 +169,6 @@ def parse_xml(path: str) -> Tuple[str, int, List[int]]:
 
 	# quantification values
 	prod_char = root.find('n1:General_Info',namespaces=ns).find('Product_Image_Characteristics')
-	# boa_quant = prod_char.find('QUANTIFICATION_VALUES_LIST').find('BOA_QUANTIFICATION_VALUE')
-	# quant_val = int(boa_quant.text)
 
 	# offset values
 	boa_add = prod_char.find('BOA_ADD_OFFSET_VALUES_LIST') #None | Element 
@@ -215,6 +213,9 @@ def get_band_filenames(s2_img_id: str, bands: [str]) -> [str]:
 	return list(map(get_band_filename,[s2_img_id]*len(bands),bands))
 
 
+####################################################################################################
+# PROCESSING, ALIGNMENT, ETC.
+####################################################################################################
 def remove_label_borders_as_array(dw_array: ndarray) -> ndarray:
 	'''
 	Take the ndarray of a dynamic world image as input and return a copy without its zero-valued 
@@ -324,7 +325,7 @@ def convert_bounds(dw,s2,dw_ij_dict):
 		'left':s2_ij_ul[1],'right':s2_ij_lr[1]}
 
 
-def align(s2_src,dw_src):
+def align(s2_src: rio.DatasetReader,dw_src: rio.DatasetReader) -> Tuple:
 	'''
 	Do everything: match indices and remove borders.
 	'''
@@ -425,8 +426,7 @@ def folder_check(drop_tiles=True):
 	removed_folders = []
 	removed_tiles   = []
 
-	# FOR EACH .SAFE folder check: empty?,xml?,label?
-	# ------------------------------------------------------
+	# 1. FOR EACH .SAFE folder check: empty?,xml?,label?
 	for folder in folders:
 		# empty folder, remove
 		if len(os.listdir(DATA_DIR+'/'+folder)) == 0:
@@ -485,8 +485,7 @@ def folder_check(drop_tiles=True):
 			print(rf)
 
 
-	# DID NOT include tile removal above so 2nd+3rd pass...
-	# ------------------------------------------------------
+	# 2. DID NOT include tile removal above so 2nd+3rd pass...
 	if drop_tiles == True:
 		drop = ['T11SKD','T11TKE']
 
@@ -513,8 +512,9 @@ def folder_check(drop_tiles=True):
 
 	return
 
+####################################################################################################
 # PLOTS
-#---------------------------------------
+####################################################################################################
 def plot_label_multiclass(path,dw_reader,dw_borders):
 	"""
 	Plot the workable area (removed both tile overlap & no-data).
@@ -649,7 +649,7 @@ def plot_label_grid(path,dw_reader,borders,windows):
 			arr3[:,arr==c] = [[r],[g],[b]]	
 
 		#LINES
-		if (arr==0).sum() > BAD_PX:
+		if (arr==0).any():
 			#set borders red
 			for i in range(3):
 				arr3[:,i,:]      = red_line #top
@@ -760,7 +760,7 @@ def plot_label_singleclass_windows(path,dw_reader,dw_borders,dw_windows):
 
 	for _,w in dw_windows:
 		#read
-		arr = dw_reader.read(1,window=w)
+		arr        = dw_reader.read(1,window=w)
 		white_mask = arr == 1 #water
 		gray_mask  = arr == 0 #nodata
 		black_mask = ~(white_mask | gray_mask) #else
@@ -772,10 +772,10 @@ def plot_label_singleclass_windows(path,dw_reader,dw_borders,dw_windows):
 		arr_3d = np.repeat(arr[np.newaxis,:,:],repeats=3,axis=0)
 
 		#write
-		out_window = Window(w.col_off-dw_borders['left'],w.row_off-dw_borders['top'],CHIP_SIZE,CHIP_SIZE)
-		out_ptr.write(arr_3d,window=out_window)
+		out_win = Window(w.col_off-dw_borders['left'],w.row_off-dw_borders['top'],CHIP_SIZE,CHIP_SIZE)
+		out_ptr.write(arr_3d,window=out_win)
 
-#TODO
+
 def plot_rgb_grid(path,s2_readers,s2_bounds,dw_reader,dw_bounds):
 	'''
 	Plot workable area within originally-sized image and overlapping windows.
@@ -800,29 +800,31 @@ def plot_rgb_grid(path,s2_readers,s2_bounds,dw_reader,dw_bounds):
 		'count':3,
 		'driver':'JP2OpenJPEG','codec':'J2K',
 		'dtype':'uint8',
-		'quality':100
+		'quality':100,
+		'reversible':True
 		})
 
 	dst = rio.open(path,'w',**kwargs)
 
+	correct_count = 0
+
 	#load bands
 	b,g,r = (_.read(1) for _ in s2_readers[0:3])
-	tci   = np.stack([r,g,b],axis=0).clip(0,32767).astype(np.int16) #int16 [-32767,32767]
+	tci   = np.stack([r,g,b],axis=0).astype(np.uint16) #int16 [-32767,32767]
 
+	#no data masks
 	rgb_zero_mask = tci == 0
 	and_zero_mask = rgb_zero_mask.all(axis=0)
 	percentiles99 = np.array([np.percentile(b[~rgb_zero_mask[i]],99) for i,b in enumerate(tci)])
+
+	#clip
 	tci[0] = np.clip(tci[0],0,percentiles99[0])
 	tci[1] = np.clip(tci[1],0,percentiles99[1])
 	tci[2] = np.clip(tci[2],0,percentiles99[2])
-	tci = tci / np.array(percentiles99.reshape(3,1,1)) * 255
-	tci = tci.astype(np.uint8)
-	tci[rgb_zero_mask] = 255
 
-	# dst.write(tci,indexes=[1,2,3])
-	# dst.close()
-
-	correct_count = 0
+	#norm and bin to 255
+	tci = (tci / np.array(percentiles99.reshape(3,1,1)) * 255).astype(np.uint8)
+	# tci[rgb_zero_mask] = 255
 
 	#plot windows
 	for k,(_,w) in enumerate(s2_windows):
@@ -830,52 +832,54 @@ def plot_rgb_grid(path,s2_readers,s2_bounds,dw_reader,dw_bounds):
 		rgb_window = tci[:, w.row_off:w.row_off+CHIP_SIZE, w.col_off:w.col_off+CHIP_SIZE]
 		lbl_array  = dw_reader.read(1,window=dw_windows[k][1])
 
-
-		# dst.write(rgb_window,window=w,indexes=[1,2,3])
-
 		# CASE #1 -- LABEL NO DATA
 		if (lbl_array == 0).any():
 			# SET BORDERS TO RED
 			for i in range(3):
-				rgb_window[:,i,:]      = red_line #top
-				rgb_window[:,-(i+1),:] = red_line #bottom
-				rgb_window[:,:,i]      = red_line #left
-				rgb_window[:,:,-(i+1)] = red_line #right
-		 	# PRINT & RETURN
-			dst.write(rgb_window,window=w,indexes=[1,2,3])
+				rgb_window[:,i,:]      = red_line #top row
+				rgb_window[:,-(i+1),:] = red_line #bottom row
+				rgb_window[:,:,i]      = red_line #left col
+				rgb_window[:,:,-(i+1)] = red_line #right col
+			dst.write(rgb_window,window=w,indexes=[1,2,3]) 		 	# PRINT & RETURN
 			continue
 
 		# CASE #2 -- BANDS NO DATA
-		if and_zero_mask[w.row_off:w.row_off+CHIP_SIZE,w.col_off:w.col_off+CHIP_SIZE].sum() > 0:
+		if and_zero_mask[w.row_off:w.row_off+CHIP_SIZE,w.col_off:w.col_off+CHIP_SIZE].sum()>BAD_PX:
 			for i in range(3):
-				rgb_window[:,i,:]      = red_line #top
-				rgb_window[:,-(i+1),:] = red_line #bottom
-				rgb_window[:,:,i]      = red_line #left
-				rgb_window[:,:,-(i+1)] = red_line #right
+				rgb_window[:,i,:]      = red_line #top row
+				rgb_window[:,-(i+1),:] = red_line #bottom row
+				rgb_window[:,:,i]      = red_line #left col
+				rgb_window[:,:,-(i+1)] = red_line #right col
 			dst.write(rgb_window,window=w,indexes=[1,2,3])
 			continue
 
 		# CASE #3 -- TOO MUCH/LITTLE WATER
 		n_water = (lbl_array==1).sum()
-		if n_water > WATER_MIN and n_water <= WATER_MAX:
-			for i in range(3):
-				rgb_window[:,i,:]      = yellow_line #top
-				rgb_window[:,-(i+1),:] = yellow_line #bottom
-				rgb_window[:,:,i]      = yellow_line #left
-				rgb_window[:,:,-(i+1)] = yellow_line #right
-			correct_count += 1
-		else:
+		if n_water < WATER_MIN or n_water > WATER_MAX:
 			for i in range(3):
 				rgb_window[:,i,:]      = red_line #top
 				rgb_window[:,-(i+1),:] = red_line #bottom
 				rgb_window[:,:,i]      = red_line #left
-				rgb_window[:,:,-(i+1)] = red_line #right		
+				rgb_window[:,:,-(i+1)] = red_line #right
+			dst.write(rgb_window,window=w,indexes=[1,2,3])
+			continue
 
+		# CASE #4 -- ALL GOOD (as far as I can tell...)
+		for i in range(3):
+			rgb_window[:,i,:]      = yellow_line #top
+			rgb_window[:,-(i+1),:] = yellow_line #bottom
+			rgb_window[:,:,i]      = yellow_line #left
+			rgb_window[:,:,-(i+1)] = yellow_line #right
+		correct_count += 1
 		dst.write(rgb_window,window=w,indexes=[1,2,3])
-
+	
 	dst.close()
-
 	print("Good chips in raster: %i/%i (bands)" % (correct_count,len(s2_windows)))
+
+	# DELETE UNNECESSARY XML METADATA
+	for f in os.listdir('./fig'):
+		if f[-3:] == 'xml':
+			os.remove('./fig/'+f)
 
 #TODO
 def plot_tci_masks(fname:str, bands:[rio.DatasetReader], offsets:[int], borders: dict) -> None:
@@ -1037,14 +1041,25 @@ def plot_tci_masks(fname:str, bands:[rio.DatasetReader], offsets:[int], borders:
 			os.remove('./fig/'+f)
 
 #TODO
-def plot_tci_windowed(dst_path,bands,borders,windows):
-
-	#need to know size of output
+def plot_rgb_windows(path,s2_readers,s2_borders,s2_windows):
+	#workable area
 	px_rows = borders['bottom'] - borders['top'] + 1
 	px_cols = borders['right'] - borders['left'] + 1
-	px_rows_blocks = px_rows - (px_rows % CHIP_SIZE - 1)
-	px_cols_blocks = px_cols - (px_cols % CHIP_SIZE -1)
-	return True
+	#window area
+	windows_h = px_rows - (px_rows % CHIP_SIZE) + 1
+	windows_w = px_cols - (px_cols % CHIP_SIZE) + 1
+
+	kwargs = s2_readers[0].meta.copy()
+	kwargs.update({
+		'count':3,
+		'height':windows_h,'width':windows_w,
+		'compress':'lzw'
+		})
+	dst = rio.open(path,'w',**kwargs)
+
+	for _,w in s2_windows:
+
+		dst.write()
 
 #TODO
 def plot_tci_chip(path,bands,window):
@@ -1282,9 +1297,11 @@ if __name__ == '__main__':
 
 	#.SAFE folders in data directory
 	folders = [d for d in os.listdir(DATA_DIR) if d[-5:]=='.SAFE']
-	folder_check()
+
+	folder_check() #<--------------- ADD ARGPARSE ARGV TO STEP HERE
 
 	s2_readers,s2_bounds,dw_reader,dw_bounds,out_id = ready_product(folders[2])
 	dw_windows = get_windows(dw_bounds)
 	plot_label_grid('./fig/'+out_id+'_LABEL_GRID.tif',dw_reader,dw_bounds,dw_windows)
-	plot_rgb_grid('test_grid.jp2',s2_readers,s2_bounds,dw_reader,dw_bounds)
+	plot_rgb_grid('./fig/'+out_id+'_RGB_GRID.jp2',s2_readers,s2_bounds,dw_reader,dw_bounds)
+	plot_label_singleclass_windows('./fig/'+out_id+'_SINGLE_CLASS.tif',dw_reader,dw_bounds,dw_windows)
