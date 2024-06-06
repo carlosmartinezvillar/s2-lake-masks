@@ -775,6 +775,9 @@ def plot_label_singleclass_windows(path,dw_reader,dw_borders,dw_windows):
 		out_win = Window(w.col_off-dw_borders['left'],w.row_off-dw_borders['top'],CHIP_SIZE,CHIP_SIZE)
 		out_ptr.write(arr_3d,window=out_win)
 
+	out_ptr.close()
+	print("Label sample written to: %s" % path)
+
 
 def plot_rgb_grid(path,s2_readers,s2_bounds,dw_reader,dw_bounds):
 	'''
@@ -810,7 +813,7 @@ def plot_rgb_grid(path,s2_readers,s2_bounds,dw_reader,dw_bounds):
 
 	#load bands
 	b,g,r = (_.read(1) for _ in s2_readers[0:3])
-	tci   = np.stack([r,g,b],axis=0).astype(np.uint16) #int16 [-32767,32767]
+	tci   = np.stack([r,g,b],axis=0).astype(np.uint16)
 
 	#no data masks
 	rgb_zero_mask = tci == 0
@@ -824,7 +827,6 @@ def plot_rgb_grid(path,s2_readers,s2_bounds,dw_reader,dw_bounds):
 
 	#norm and bin to 255
 	tci = (tci / np.array(percentiles99.reshape(3,1,1)) * 255).astype(np.uint8)
-	# tci[rgb_zero_mask] = 255
 
 	#plot windows
 	for k,(_,w) in enumerate(s2_windows):
@@ -834,7 +836,7 @@ def plot_rgb_grid(path,s2_readers,s2_bounds,dw_reader,dw_bounds):
 
 		# CASE #1 -- LABEL NO DATA
 		if (lbl_array == 0).any():
-			# SET BORDERS TO RED
+			rgb_window = rgb_window // 4
 			for i in range(3):
 				rgb_window[:,i,:]      = red_line #top row
 				rgb_window[:,-(i+1),:] = red_line #bottom row
@@ -845,6 +847,7 @@ def plot_rgb_grid(path,s2_readers,s2_bounds,dw_reader,dw_bounds):
 
 		# CASE #2 -- BANDS NO DATA
 		if and_zero_mask[w.row_off:w.row_off+CHIP_SIZE,w.col_off:w.col_off+CHIP_SIZE].sum()>BAD_PX:
+			rgb_window = rgb_window // 4
 			for i in range(3):
 				rgb_window[:,i,:]      = red_line #top row
 				rgb_window[:,-(i+1),:] = red_line #bottom row
@@ -856,6 +859,7 @@ def plot_rgb_grid(path,s2_readers,s2_bounds,dw_reader,dw_bounds):
 		# CASE #3 -- TOO MUCH/LITTLE WATER
 		n_water = (lbl_array==1).sum()
 		if n_water < WATER_MIN or n_water > WATER_MAX:
+			rgb_window = rgb_window // 4
 			for i in range(3):
 				rgb_window[:,i,:]      = red_line #top
 				rgb_window[:,-(i+1),:] = red_line #bottom
@@ -864,7 +868,7 @@ def plot_rgb_grid(path,s2_readers,s2_bounds,dw_reader,dw_bounds):
 			dst.write(rgb_window,window=w,indexes=[1,2,3])
 			continue
 
-		# CASE #4 -- ALL GOOD (as far as I can tell...)
+		# CASE #4 -- ALL GOOD
 		for i in range(3):
 			rgb_window[:,i,:]      = yellow_line #top
 			rgb_window[:,-(i+1),:] = yellow_line #bottom
@@ -1040,26 +1044,51 @@ def plot_tci_masks(fname:str, bands:[rio.DatasetReader], offsets:[int], borders:
 		if f[-3:] == 'xml':
 			os.remove('./fig/'+f)
 
-#TODO
-def plot_rgb_windows(path,s2_readers,s2_borders,s2_windows):
-	#workable area
-	px_rows = borders['bottom'] - borders['top'] + 1
-	px_cols = borders['right'] - borders['left'] + 1
-	#window area
-	windows_h = px_rows - (px_rows % CHIP_SIZE) + 1
+
+def plot_rgb_windows(path,s2_readers,borders,s2_windows):
+	px_rows   = borders['bottom'] - borders['top'] + 1 #workable area
+	px_cols   = borders['right'] - borders['left'] + 1
+	windows_h = px_rows - (px_rows % CHIP_SIZE) + 1	#window area
 	windows_w = px_cols - (px_cols % CHIP_SIZE) + 1
 
 	kwargs = s2_readers[0].meta.copy()
 	kwargs.update({
 		'count':3,
 		'height':windows_h,'width':windows_w,
-		'compress':'lzw'
+		'driver':'JP2OpenJPEG','codec':'J2K',
+		'dtype':'uint8',
+		'quality':100
 		})
 	dst = rio.open(path,'w',**kwargs)
 
-	for _,w in s2_windows:
+	b,g,r = (_.read(1) for _ in s2_readers[0:3])	
 
-		dst.write()
+	rgb_zeromask = np.stack([r,g,b],axis=0).astype(np.uint16) == 0
+	pvalues = np.array([np.percentile(band[band!=0],99) for band in [r,g,b]])
+
+	for _,w in s2_windows:
+		#select window and stack
+		r_window = r[w.row_off:w.row_off+CHIP_SIZE,w.col_off:w.col_off+CHIP_SIZE]
+		g_window = g[w.row_off:w.row_off+CHIP_SIZE,w.col_off:w.col_off+CHIP_SIZE]
+		b_window = b[w.row_off:w.row_off+CHIP_SIZE,w.col_off:w.col_off+CHIP_SIZE]
+
+		#clip
+		r_window = np.clip(r_window,0,pvalues[0])
+		g_window = np.clip(g_window,0,pvalues[1])
+		b_window = np.clip(b_window,0,pvalues[2])
+
+		rgb_w = np.stack((r_window,g_window,b_window),axis=0)
+
+		#norm, scale and floor (bin)
+		rgb_w = (rgb_w / pvalues.reshape((3,1,1)) * 255).astype(np.uint8)
+
+		wrt_window = Window(w.col_off-borders['left'],w.row_off-borders['top'],CHIP_SIZE,CHIP_SIZE)
+		dst.write(rgb_w,window=wrt_window,indexes=[1,2,3])
+
+	dst.close()
+	print("RGB raster sample written to: %s" % path)
+
+	return
 
 #TODO
 def plot_tci_chip(path,bands,window):
@@ -1071,7 +1100,7 @@ def plot_tci_chip(path,bands,window):
 		'driver':'JP2OpenJPEG','coded':'J2K',
 		'tiled':True,'blockxsize':CHIP_SIZE,'blockysize':CHIP_SIZE,
 		'dtype':'uint8'
-		})
+	})
 
 	return
 #---------------------------------------
@@ -1302,6 +1331,8 @@ if __name__ == '__main__':
 
 	s2_readers,s2_bounds,dw_reader,dw_bounds,out_id = ready_product(folders[2])
 	dw_windows = get_windows(dw_bounds)
-	plot_label_grid('./fig/'+out_id+'_LABEL_GRID.tif',dw_reader,dw_bounds,dw_windows)
-	plot_rgb_grid('./fig/'+out_id+'_RGB_GRID.jp2',s2_readers,s2_bounds,dw_reader,dw_bounds)
+	s2_windows = get_windows(s2_bounds)
+	# plot_label_grid('./fig/'+out_id+'_LABEL_GRID.tif',dw_reader,dw_bounds,dw_windows)
+	# plot_rgb_grid('./fig/'+out_id+'_RGB_GRID.jp2',s2_readers,s2_bounds,dw_reader,dw_bounds)
 	plot_label_singleclass_windows('./fig/'+out_id+'_SINGLE_CLASS.tif',dw_reader,dw_bounds,dw_windows)
+	plot_rgb_windows('./fig/'+out_id+'_RGB.jp2',s2_readers,s2_bounds,s2_windows)
