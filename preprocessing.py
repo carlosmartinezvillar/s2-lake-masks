@@ -121,33 +121,33 @@ def parse_xml(path: str) -> Tuple[str, int, List[int]]:
 	-------
 	xml file is organized like this:
 	
-	<n1:General_Info>
-		<Product_Info>
-			<Product_Organisation>
-				<Granule_List>
-					<Granule datastripIdentifier="" granuleIdentifier="">
+			<n1:General_Info>
+				<Product_Info>
+					<Product_Organisation>
+						<Granule_List>
+							<Granule datastripIdentifier="" granuleIdentifier="">
 
 	Hence, the datastrip is parsed with
 
-	root.find('n1:General_Info',ns)
-		.find('Product_Info')
-			.find('Product_Organisation')
-				.find('Granule_List')
-					.find('Granule').attrib['datastripIdentifier']
+			root.find('n1:General_Info',ns)
+				.find('Product_Info')
+					.find('Product_Organisation')
+						.find('Granule_List')
+							.find('Granule').attrib['datastripIdentifier']
 
 	The XML structure of the offsets looks like this
 
-	<Product_Image_Characteristics>
-		<QUANTIFICATION_VALUES LIST>
-			<BOA_QUANTIFICATION_VALUE>
-		<BOA_ADD_OFFSET_VALUES_LIST>
-			<BOA_ADD_OFFSET band_id="0">-1000</BOA_ADD_OFFSET>
-			<BOA_ADD_OFFSET band_id="1">-1000</BOA_ADD_OFFSET>
-			<BOA_ADD_OFFSET band_id="2">-1000</BOA_ADD_OFFSET>
-			...
-			<BOA_ADD_OFFSET band_id="12">-1000</BOA_ADD_OFFSET>			
-		<Reflectance_Conversion>
-		...
+			<Product_Image_Characteristics>
+				<QUANTIFICATION_VALUES LIST>
+					<BOA_QUANTIFICATION_VALUE>
+				<BOA_ADD_OFFSET_VALUES_LIST>
+					<BOA_ADD_OFFSET band_id="0">-1000</BOA_ADD_OFFSET>
+					<BOA_ADD_OFFSET band_id="1">-1000</BOA_ADD_OFFSET>
+					<BOA_ADD_OFFSET band_id="2">-1000</BOA_ADD_OFFSET>
+					...
+					<BOA_ADD_OFFSET band_id="12">-1000</BOA_ADD_OFFSET>			
+				<Reflectance_Conversion>
+				...
 
 	So they are parsed, by iterating on the result of
 
@@ -164,7 +164,6 @@ def parse_xml(path: str) -> Tuple[str, int, List[int]]:
 	root      = ET.parse(path).getroot()
 	prod_info = root.find('n1:General_Info',namespaces=ns).find('Product_Info')
 	granule   = prod_info.find('Product_Organisation').find('Granule_List').find('Granule')
-	# granule   = [e for e in prod_info.iter('Granule')][0]
 	datastrip = granule.attrib['datastripIdentifier'].split('_')[-2][1:]
 
 	# quantification values
@@ -684,7 +683,7 @@ def plot_label_grid(path,dw_reader,borders,windows):
 		out_ptr.write(arr3,window=w,indexes=[1,2,3]) #if out_ptr size == original
 
 	#-----------------------------------
-	#PLOT REMAINING IMAGE BEYOND WINDOWS
+	# REMAINDER BEYOND WINDOWS
 	#-----------------------------------	
 	block_rows     = height // CHIP_SIZE
 	block_cols     = width // CHIP_SIZE
@@ -1327,9 +1326,9 @@ if __name__ == '__main__':
 	#.SAFE folders in data directory
 	folders = [d for d in os.listdir(DATA_DIR) if d[-5:]=='.SAFE']
 
-	folder_check() #<--------------- ADD ARGPARSE ARGV TO STEP HERE
+	# folder_check() #<--------------- ADD ARGPARSE ARGV TO STEP HERE
 
-	s2_readers,s2_bounds,dw_reader,dw_bounds,out_id = ready_product(folders[2])
+	s2_readers,s2_bounds,dw_reader,dw_bounds,out_id = ready_product(folders[0])
 	dw_windows = get_windows(dw_bounds)
 	s2_windows = get_windows(s2_bounds)
 	# plot_label_grid('./fig/'+out_id+'_LABEL_GRID.tif',dw_reader,dw_bounds,dw_windows)
