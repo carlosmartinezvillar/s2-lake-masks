@@ -340,12 +340,22 @@ def chip_image(path: str, windows: [Tuple], base_id: str):
 
 
 #TODO
+# ------> THIS FUNCTION IS GONNA NEED TO CREATE 5 READERS within, RGBN + LABEL FOR CHECKING
 def chip_image_worker(path: str, windows: [Tuple], base_id: str) -> None:
-	rdr = rio.open(path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+
+	b2_path = 
+    b3_path = 
+    b4_path = 
+    b8_path = 
+    dw_path = 
+
+	b2_rdr = rio.open(b2_path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+	b3_rdr = rio.open(b3_path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+	b4_rdr = rio.open(b4_path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+	b8_rdr = rio.open(b8_path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+	dw_rdr = rio.open(dw_path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
 
 	print('Done')
-
-# ------> THIS FUNCTION IS GONNA NEED TO CREATE 5 READERS within, RGBN + LABEL FOR CHECKING
 
 
 def prep_product(s2_id: str) -> Tuple:
@@ -381,6 +391,10 @@ def prep_product(s2_id: str) -> Tuple:
 	base_chip_id = gee_id + '_' + rotation
 
 	return s2_readers,s2_borders,dw_reader,dw_borders,base_chip_id
+
+
+class Product()
+	def __init__(self):
 
 
 if __name__ == '__main__':
