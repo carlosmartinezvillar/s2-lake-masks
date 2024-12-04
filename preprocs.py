@@ -349,11 +349,30 @@ def chip_image_worker(path: str, windows: [Tuple], base_id: str) -> None:
     b8_path = 
     dw_path = 
 
-	b2_rdr = rio.open(b2_path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
-	b3_rdr = rio.open(b3_path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
-	b4_rdr = rio.open(b4_path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
-	b8_rdr = rio.open(b8_path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
-	dw_rdr = rio.open(dw_path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+	b2_reader = rio.open(b2_path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+	b3_reader = rio.open(b3_path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+	b4_reader = rio.open(b4_path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+	b8_reader = rio.open(b8_path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+	dw_reader = rio.open(dw_path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+
+	kwargs = b2_reader.meta.copy()
+	kwargs.update({
+			'count':1,
+			'driver':J
+		})
+
+	dst = rio.open(out_path,'w',**kwargs)
+
+	#NORMALIZE and bin to 255
+
+	for _,w in s2_windows:
+		# CHECK LABEL NO DATA
+
+		# CHECK BANDS NO DATA
+
+		# CHECK WATER/LAND RATIO
+
+		# ALL GOOD -- SAVE
 
 	print('Done')
 
@@ -364,7 +383,7 @@ def prep_product(s2_id: str) -> Tuple:
 	'''
 	#1.1 ID -> BAND READERS
 	s2_filenames = get_band_filenames(s2_id)
-	s2_reader    = [rio.open(DATA_DIR+'/'+s2_id+'/'+s,'r') for f in s2_filenames]
+	s2_reader    = rio.open(DATA_DIR+'/'+s2_id+'/'+s2_filenames[0],'r')
 
 	#1.2 ID -> XML PATH
 	#2.XML -> DW PATH
