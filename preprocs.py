@@ -8,6 +8,7 @@ import glob
 import math
 import multiprocessing as mp
 import time
+from PIL import Image
 
 # Typing
 from typing import Tuple, List
@@ -27,12 +28,74 @@ plt.style.use('fast')
 DATA_DIR = os.getenv('DATA_DIR')
 if DATA_DIR is None:DATA_DIR = './dat'
 LABEL_DIR = DATA_DIR+'/dynamicworld'
-CHIP_DIR  = DATA_DIR+'/chp'
+CHIP_DIR  = DATA_DIR+'/chips'
 
 CHIP_SIZE = 256
 WATER_MIN = 128*64 #1/8 of the image
 WATER_MAX = CHIP_SIZE*CHIP_SIZE-WATER_MIN #balanced for 1/8 land
 BAD_PX    = 3276
+
+# Tired of keeping track of parameters...
+class Product():
+	def __init__(self,safe_id):
+		self.id    = safe_id
+		self.tile  = self.id[38:44]
+		self.date  = self.id[11:26]
+		self.orbit = self.id[33:37]
+
+		#1.1 ID -> BAND READERS
+		self.s2_fnames  = self.get_band_filenames() #sorted
+		self.s2_readers = []
+		for f in self.s2_fnames:
+			self.s2_readers += [rio.open(f'{DATA_DIR}/{safe_id}/{f}','r',tiled=True)]
+
+		#1.2 ID -> XML PATH
+		#2.XML -> DW PATH
+		#3.DW PATH -> DW READER
+		self.gee_id    = self.get_gee_id()
+		self.dw_path   = f'{LABEL_DIR}/{self.gee_id}.tif'		
+		self.dw_reader = rio.open(self.dw_path,'r',tiled=True)
+
+		#4.DW READER -> BOUNDS DW
+		#5.DW BOUNDS + DW READER+BAND2 READER -> BOUNDS S2 & BOUNDS DW
+		self.s2_borders, self.dw_borders = align(self.s2_readers[0],self.dw_reader)
+	
+		#DATE_DSTRIP_TILE_ROTATION_WINROW_WINCOL_B0*.tif
+		#DATE_DSTRIP_TILE_ROTATION_WINROW_WINCOL_LBL.tif	
+		self.base_chip_id = self.gee_id + '_' + self.orbit
+
+	def get_band_filenames(self):
+		return [f'{self.tile}_{self.date}_{b}_10m.jp2' for b in ['B02','B03','B04','B08']]
+
+	def get_gee_id(self):
+		xml_path  = glob.glob(f'{DATA_DIR}/{self.id}/*.xml')[0]
+		datastrip = parse_xml(xml_path)
+		return '_'.join([self.date,datastrip,self.tile])
+
+def prep_product(s2_id: str) -> Tuple:
+	'''
+	Do all the stuff needed before any step/plots
+	'''
+	#1.1 ID -> BAND READERS
+	s2_filenames = get_band_filenames(s2_id) #always sorted
+	s2_reader    = rio.open(DATA_DIR+'/'+s2_id+'/'+s2_filenames[0],'r')
+	#1.2 ID -> XML PATH
+	#2.XML -> DW PATH
+	#3.DW PATH -> DW READER
+	xml_path  = glob.glob('/'.join([DATA_DIR,s2_id,'/*.xml']))[0]
+	datastrip = parse_xml(xml_path)
+	date,tile = s2_id.split('_')[2:6:3]
+	gee_id    = '_'.join([date,datastrip,tile])
+	dw_path   = '/'.join([LABEL_DIR,gee_id]) + '.tif'
+	dw_reader = rio.open(dw_path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+	#4.DW READER -> BOUNDARIES DW
+	#5.BOUNDARIES DW + B2 BAND READER -> BOUNDARIES S2 & BOUNDARIES DW
+	s2_borders,dw_borders = align(s2_reader,dw_reader)
+	#DATE_DSTRIP_TILE_ROTATION_WINROW_WINCOL_B0*.tif
+	#DATE_DSTRIP_TILE_ROTATION_WINROW_WINCOL_LBL.tif	
+	rotation = s2_id[33:37]
+	base_chip_id = gee_id + '_' + rotation
+	return s2_reader,s2_borders,dw_reader,dw_borders,base_chip_id
 
 ####################################################################################################
 # PLOTS
@@ -318,16 +381,15 @@ def folder_check(drop_tiles=True):
 			print(rf)
 
 
-def chip_image(safe_id: str, s2_windows: [Tuple], dw_windows: [Tuple], base_id: str):
-	print(f'PROCESSING {safe_id}')
-
-	rgbn_filenames = get_band_filenames(safe_id)
-	rgbn_readers = [rio.open(f'{DATA_DIR}/{safe_id}/{f}','r') for f in rgbn_filenames]
+def chip_image(product):
+	print(f'PROCESSING {product.id} ')
+	# rgbn_fnames = get_band_filenames(product.safe_id)
+	# rgbn_readers = [rio.open(f'{DATA_DIR}/{product.safe_id}/{f}','r') for f in rgbn_fnames]
 
 	# NORMALIZE BANDS
 	rgbn = []
-	for reader in rgbn_readers:
-		print(f'Loading {reader.name[-20:]}')
+	for reader in product.s2_readers:
+		print(f'Loading {reader.name[-34:]}')
 		band_array = reader.read(1)
 		zero_mask  = band_array == 0
 		cutoff     = np.percentile(band_array[~zero_mask],99)
@@ -336,6 +398,8 @@ def chip_image(safe_id: str, s2_windows: [Tuple], dw_windows: [Tuple], base_id: 
 		rgbn.append(band_array)
 
 	#SPLIT WINDOWS
+	s2_windows = get_windows(product.s2_borders)
+	dw_windows = get_windows(product.dw_borders)	
 	n_proc   = mp.cpu_count() - 1
 	share    = len(s2_windows) // n_proc
 	leftover = len(s2_windows) % n_proc
@@ -345,97 +409,61 @@ def chip_image(safe_id: str, s2_windows: [Tuple], dw_windows: [Tuple], base_id: 
 	s2_chunks = [s2_windows[s0:s1] for s0,s1 in zip(start,stop)]
 	dw_chunks = [dw_windows[s0:s1] for s0,s1 in zip(start,stop)]	
 
-	return
+	lock = mp.Lock()
 
 	#THROW WORKERS AT ARRAYS
 	for i in range(n_proc):
-		p = mp.Process(target=chip_image_worker,args=(rgbn,dw_path,work_blocks[i],base_id))
+		p = mp.Process(
+			target=chip_image_worker,
+			args=(rgbn,product.dw_path,s2_chunks[i],dw_chunks[i],product.base_chip_id,lock)
+			)
 		p.start()
 	p.join()
 
 
-#TODO
+def chip_image_worker(rgbn,dw_path,s2_windows,dw_windows,base_id,lock):
 
-def chip_image_worker(rgbn_array: [ndarray], dw_path: str, windows: [Tuple], base_id: str) -> None:
+	stats = []
+	lbl_rdr = rio.open(dw_path,'r',tiled=True)
 
-	dw_reader = rio.open(dw_path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+	for k,(rowcol,w) in enumerate(s2_windows):
 
-	# for k,(rowcol,w) in enumerate(s2_windows):
+		lbl_arr = lbl_rdr.read(1,window=dw_windows[k][1])
+
 		# CHECK LABEL NO DATA
+		if (lbl_arr == 0).any():
+			continue
 
 		# CHECK WATER/LAND RATIO
+		n_water = (lbl_arr==1).sum()
+		if n_water < WATER_MIN or n_water > WATER_MAX:
+			continue
 
-		# ALL GOOD -- SAVE
-
-		# PIL to write
-		outfile = f'{base_id}_B02_{row}_{col}.tif'
-
-	print('Done')
-
-
-def prep_product(s2_id: str) -> Tuple:
-	'''
-	Do all the stuff needed before any step/plots
-	'''
-	#1.1 ID -> BAND READERS
-	s2_filenames = get_band_filenames(s2_id) #always sorted
-	s2_reader    = rio.open(DATA_DIR+'/'+s2_id+'/'+s2_filenames[0],'r')
-
-	#1.2 ID -> XML PATH
-	#2.XML -> DW PATH
-	#3.DW PATH -> DW READER
-	xml_path  = glob.glob('/'.join([DATA_DIR,s2_id,'/*.xml']))[0]
-	datastrip = parse_xml(xml_path)
-	date,tile = s2_id.split('_')[2:6:3]
-	gee_id    = '_'.join([date,datastrip,tile])
-	dw_path   = '/'.join([LABEL_DIR,gee_id]) + '.tif'
-	dw_reader = rio.open(dw_path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
-
-	#4.DW READER -> BOUNDARIES DW
-	#5.BOUNDARIES DW + B2 BAND READER -> BOUNDARIES S2 & BOUNDARIES DW
-	s2_borders,dw_borders = align(s2_reader,dw_reader)
-
-	'''
-	Simplest chip id: 
-		DATE_DSTRIP_TILE_ROTATION_WINROW_WINCOL_B0*.tif
-
-	Label chip id:
-		DATE_DSTRIP_TILE_ROTATION_WINROW_WINCOL_LBL.tif
-	'''
-	rotation = s2_id[33:37]
-	base_chip_id = gee_id + '_' + rotation
-
-	return s2_reader,s2_borders,dw_reader,dw_borders,base_chip_id
-
-# Tired of keeping track of every variable passed when testing...
-class Product():
-	def __init__(self,safe_id):
-		self.id    = safe_id
-		self.tile  = self.id[38:44]
-		self.date  = self.id[11:26]
-		self.orbit = self.id[33:37]
-
-		self.s2_fnames = self.get_band_filenames()
-		self.s2_readers = [rio.open(f'{DATA_DIR}/{safe_id}/{f}') for f in s2_fnames]
+		# ALL GOOD -- SAVE BANDS
+		row = rowcol[0]
+		col = rowcol[1]
+		for band,name in zip(rgbn,['B02','B03','B04','B08']):
+			outfile = f'{CHIP_DIR}/{base_id}_{row:02}_{col:02}_{name}.tif'
+			img = Image.fromarray(band[w.row_off:w.row_off+CHIP_SIZE, w.col_off:w.col_off+CHIP_SIZE])
+			img.save(outfile)
 		
-		self.gee_id    = self.get_gee_id()
-		self.dw_path   = f'{DATA_DIR}/{self.gee_id}.tif'
-		self.dw_reader = rio.open(self.dw_path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
+		# ALL GOOD -- SAVE LABEL
+		outfile = f'{CHIP_DIR}/{base_id}_{row:02}_{col:02}_LBL.tif'
+		lbl_arr[lbl_arr!=1] = 0 #everything else (already checked for zeroes above)
+		lbl_arr[lbl_arr==1] = 255 #water
+		img = Image.fromarray(lbl_arr)
+		img.save(outfile)
 
-		self.s2_borders, self.dw_borders = align(self.s2_readers[0],self.dw_reader)
+		stats.append(f'{outfile}\t{n_water}\n')
 
-		self.s2_windows = get_windows(self.s2_borders)
-		self.dw_windows = get_windows(self.dw_borders)
+	# LOG
+	lock.acquire()
+	with open(f'{CHIP_DIR}/stats.txt','a') as fp:
+		for line in stats:
+			fp.write(line)
+	print(f'Worker {os.getpid()} done.')
+	lock.release()
 
-		self.base_chip_id = self.gee_id + '_' + self.orbit
-
-	def get_band_filenames(self):
-		return [f'{self.tile}_{self.date}_{b}_10m.jp2' for b in ['B02','B03','B04','B08']]
-
-	def get_gee_id(self):
-		xml_path  = glob.glob(f'{DATA_DIR}/{self.id}/*.xml')[0]
-		datastrip = parse_xml(xml_path)
-		return '_'.join([self.date,datastrip,self.tile])
 
 
 if __name__ == '__main__':
@@ -446,14 +474,8 @@ if __name__ == '__main__':
 	folders = glob.glob('*.SAFE',root_dir=DATA_DIR)
 	paths   = glob.glob(DATA_DIR+'/*.SAFE')
 
-	s2_readers,s2_bounds,dw_reader,dw_bounds,out_id = prep_product(folders[0])
+	if not os.path.isdir(CHIP_DIR):
+		os.mkdir(CHIP_DIR)
 
-	dw_windows = get_windows(dw_bounds)
-	s2_windows = get_windows(s2_bounds)
-
-	test = 'S2B_MSIL2A_20230131T184619_N0509_R070_T11SKD_20230131T213704.SAFE'
-	chip_image(test,s2_windows,dw_windows,out_id)
-	pass
-
-	# plot_label_singleclass_windows('./fig/'+out_id+'_SINGLE_CLASS.tif',dw_reader,dw_bounds,dw_windows)
-	# plot_rgb_windows('./fig/'+out_id+'_RGB.jp2',s2_readers,s2_bounds,s2_windows)
+	test_product = Product(folders[0])
+	chip_image(test_product)
