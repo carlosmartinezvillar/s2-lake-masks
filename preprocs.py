@@ -9,6 +9,7 @@ import math
 import multiprocessing as mp
 import time
 from PIL import Image
+import sys
 
 # Typing
 from typing import Tuple, List
@@ -458,24 +459,41 @@ def chip_image_worker(rgbn,dw_path,s2_windows,dw_windows,base_id,lock):
 
 	# LOG
 	lock.acquire()
+	print(f'Worker {mp.current_process()} done.')	
 	with open(f'{CHIP_DIR}/stats.txt','a') as fp:
 		for line in stats:
 			fp.write(line)
-	print(f'Worker {mp.current_process()} done.')
 	lock.release()
 
 
-
 if __name__ == '__main__':
-
-	# folder_check() #<--------------- ADD ARGPARSE ARGV TO STEP HERE
+	#<--------------- ADD ARGPARSE ARGV TO STEP HERE
+	# folder_check() 
 
 	#.SAFE folders in data directory
 	folders = glob.glob('*.SAFE',root_dir=DATA_DIR)
 	paths   = glob.glob(DATA_DIR+'/*.SAFE')
 
+	# Check everything is there
+	if not os.path.isdir(DATA_DIR):
+		print("DATA_DIR not found. EXITING.")
+		sys.exit()
+	else:
+		print(f"DATA_DIR set to: {DATA_DIR}")
+
+	if not os.path.isdir(LABEL_DIR):
+		print("LABEL_DIR not found. EXITING.")
+		sys.exit()
+
+	#make chip dir if not already there
 	if not os.path.isdir(CHIP_DIR):
 		os.mkdir(CHIP_DIR)
 
-	test_product = Product(folders[0])
-	chip_image(test_product)
+	#clean log file
+	if os.path.isfile(CHIP_DIR+'/stats.txt'):
+		os.remove(CHIP_DIR+'/stats.txt')
+
+	# test_product = Product(folders[0])
+	for f in folders:
+		product = Product(f) #load metadata
+		chip_image(product) #chip
