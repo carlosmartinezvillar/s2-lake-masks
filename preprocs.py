@@ -461,7 +461,7 @@ def chip_image_worker(rgbn,dw_path,s2_windows,dw_windows,base_id,lock):
 	with open(f'{CHIP_DIR}/stats.txt','a') as fp:
 		for line in stats:
 			fp.write(line)
-	print(f'Worker {os.getpid()} done.')
+	print(f'Worker {mp.current_process()} done.')
 	lock.release()
 
 
