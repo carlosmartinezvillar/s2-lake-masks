@@ -27,21 +27,15 @@ ns = {
 # Plots
 plt.style.use('fast')
 
-#DIRs and such
-DATA_DIR = os.getenv('DATA_DIR')
-if DATA_DIR is None:DATA_DIR = './dat'
-LABEL_DIR = DATA_DIR+'/dynamicworld'
-CHIP_DIR  = DATA_DIR+'/chips'
-
-CHIP_SIZE = 256
-WATER_MIN = 128*64 #1/8 of the image
-WATER_MAX = CHIP_SIZE*CHIP_SIZE-WATER_MIN #balanced for 1/8 land
-BAD_PX    = 3276
-
 parser = argparse.ArgumentParser(
 	prog="preprocs.py",
 	description="Preprocessing (chipping) of Sentinel-2 and DynamicWorld V1 images.")
-
+parser.add_argument('--data-dir',default='./dat',
+	help="Dataset directory")
+parser.add_argument('--chip-dir',
+	help="Chip directory")
+parser.add_argument('--clean',action='store_true',default=False,
+	help="Remove unlabeled rasters and unnecessary files",dest='clean')
 parser.add_argument('--plots',action='store_true',default=False,
 	help='Plot a sample of inputs and labels.',dest='plots')
 parser.add_argument('--chips',action='store_true',default=False,
@@ -49,6 +43,22 @@ parser.add_argument('--chips',action='store_true',default=False,
 parser.add_argument('--kml',action='store_true',default=False,
 	help='Filter original Sentinel-2 tile grid and create two files for AOI. Useful for dataset plots.',dest='kml')
 
+args = parser.parse_args()
+
+#SET DIRS HERE BECAUSE THREAD ACCESS
+DATA_DIR  = args.data_dir
+LABEL_DIR = DATA_DIR+'/dynamicworld' 
+CHIP_DIR  = args.chip_dir
+if CHIP_DIR is None:
+	CHIP_DIR  = DATA_DIR+'/chips' #Subdir in same place as .SAFE folders
+
+# PIXEL LIMITS -- I suppose these are good here too bc threads/processes
+CHIP_SIZE = 256
+WATER_MIN = 128*64 #1/8 of the image
+WATER_MAX = CHIP_SIZE*CHIP_SIZE-WATER_MIN #balanced for 1/8 land
+BAD_PX    = 3276
+####################################################################################################
+# CLASSES
 ####################################################################################################
 # Tired of keeping track of parameters...
 class Product():
@@ -157,7 +167,7 @@ def filter_tile_kml(drop=False):
 	tiles = list(tiles_unique)
 
 	print("RASTERS PER TILE")
-	print("-")*80
+	print("-"*80)
 	for t,c in zip(tiles_unique,counts):
 		print(f"{t} | {c} | " + "*"*(c//2))
 
@@ -392,7 +402,7 @@ def get_windows(borders: dict) -> [Tuple]:
 	return windows
 
 
-def folder_check(drop_tiles=True):
+def folder_check():
 	'''
 	1.Remove .SAFE/products without a matching dynanmic world label.
 	2.Drop two tiles: T11SKD,T11TKE.
@@ -423,7 +433,7 @@ def folder_check(drop_tiles=True):
 			continue
 
 		# get dynarmicworld id
-		dstrip,_ = parse_xml(xml_path)
+		dstrip   = parse_xml(xml_path)
 		date     = folder[11:26]
 		tile     = folder[38:44]
 		dw_id    = '_'.join([date,dstrip,tile])
@@ -447,7 +457,7 @@ def folder_check(drop_tiles=True):
 				n_label += 1
 		else:
 			# d.n.e, remove whole .SAFE dir
-			print("--> Removing folder %s" % folder)
+			print("NO LABEL --> Removing folder %s" % folder)
 			for file in os.listdir(DATA_DIR+'/'+folder):
 				os.remove('/'.join([DATA_DIR,folder,file]))
 			os.rmdir(DATA_DIR+'/'+folder)
@@ -546,9 +556,18 @@ def chip_image_worker(rgbn,dw_path,s2_windows,dw_windows,base_id,lock):
 
 
 if __name__ == '__main__':
-	#<--------------- ADD ARGPARSE ARGV TO STEP HERE
-	args = parser.parse_args()
-	# folder_check() 
+
+	if not os.path.isdir(DATA_DIR):
+		print("DATA_DIR not found. EXITING.")
+		sys.exit()
+	print(f"DATA_DIR set to: {DATA_DIR}")	
+	if len(glob.glob('*.SAFE',root_dir=DATA_DIR)):
+		print("EMPTY DATA_DIR")
+	print(f"LABEL_DIR set to: {LABEL_DIR}")
+	print(f"CHIP_DIR set to: {CHIP_DIR}")
+
+	if args.clean:
+		folder_check() 
 
 	if args.chips:
 		#.SAFE folders in data directory
@@ -556,12 +575,6 @@ if __name__ == '__main__':
 		paths   = glob.glob(DATA_DIR+'/*.SAFE')
 
 		# Check everything is there
-		if not os.path.isdir(DATA_DIR):
-			print("DATA_DIR not found. EXITING.")
-			sys.exit()
-		else:
-			print(f"DATA_DIR set to: {DATA_DIR}")
-
 		if not os.path.isdir(LABEL_DIR):
 			print("LABEL_DIR not found. EXITING.")
 			sys.exit()
