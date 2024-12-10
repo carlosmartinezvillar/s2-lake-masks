@@ -125,15 +125,9 @@ def plot_label_singleclass(path,dw_reader,dw_borders,dw_windows):
 	print("Label sample written to: %s" % path)
 
 
-def filter_tile_kml():
+def filter_tile_kml(drop=False):
 
-	kml_ns = {
-		'':"http://www.opengis.net/kml/2.2",
-		'gx':"http://www.opengis.net/kml/2.2",
-		'kml':"http://www.opengis.net/kml/2.2",
-		'atom':"http://www.w3.org/2005/Atom"
-	}
-
+	# CHECK FILE OR .ZIP OF EXISTS 
 	kml_path = 'S2A_OPER_GIP_TILPAR_MPC__20151209T095117_V20150622T000000_21000101T000000_B00.kml'
 
 	if not os.path.isfile(kml_path):
@@ -150,29 +144,63 @@ def filter_tile_kml():
 			except:
 				print("Could not extract KML from .zip file.")
 				return
+
+	#LOAD LIST OF TILES IN DATASET
+	# products = glob.glob('*.SAFE',root_dir=DATA_DIR)
+	# tiles = [p.split('-'[5][1:] for p in products)]
+	products = glob.glob('*.tif',root_dir=f'{DATA_DIR}/dynamicworld')
+	if drop:
+		tiles = np.unique([p.split('_')[2][1:6] for p in products if p!='11TKE' and p!='11SKD'])
+	else:
+		tiles = np.unique([p.split('_')[2][1:6] for p in products])
+	tiles = list(tiles)
+
+	kml_ns = {
+		'':"http://www.opengis.net/kml/2.2",
+		'gx':"http://www.opengis.net/kml/2.2",
+		'kml':"http://www.opengis.net/kml/2.2",
+		'atom':"http://www.w3.org/2005/Atom"
+	}
+
 	
+	ET.register_namespace('',"http://www.opengis.net/kml/2.2")
 
-	source_root = ET.parse(kml_path).getroot()
-	# <-----------------------------------TO DO HERE.
-	pass
-
-	document_keep      = [e for e in source_root[0][0:5]]
+	#PARSE ORIGINAL SENTINEL-2 KML
+	source_root        = ET.parse(kml_path).getroot()
 	source_folder      = source_root[0][5] #the list
-	source_folder_keep = [folder[0],folder[1]]
+	document_keep      = [e for e in source_root[0][0:5]] + [source_root[0][6]]
 
-	target_document = ET.Element("{%s}Document" % kml_ns[''])
-	target_folder = ET.Element("{%s}Folder" % kml_ns[''])
+	# START APPENDING STUFF TO NEW KML
+	# <FOLDER>
+	# target_folder = ET.Element("{%s}Folder" % kml_ns[''])
+	target_folder = ET.Element("Folder")
+	target_folder.insert(0,source_folder[0])
+	target_folder.insert(1,source_folder[1])
 
-	for tile in source_folder.findall('Placemark',kml_ns):
-		#CHECK ID
-		pass
+	# for placemark in source_folder.findall('Placemark',kml_ns):
+	for placemark in source_folder.findall('Placemark'):
+		if placemark[0].text in tiles: #CHECK ID -- placemark[0] is name
+			target_folder.append(placemark)
 
-	target_root.set('xmlns',kml_ns['']) #not sure why namespace can't be copied as attrib
-	target_root.set(f'xmlns:gx',kml_ns['gx'])
-	target_root.set(f'xmlns:kml',kml_ns['kml'])
-	target_root.set(f'xmlns:atom',kml_ns['atom'])
+	# <DOCUMENT>
+	# target_document = ET.Element("{%s}Document" % kml_ns[''])
+	target_document = ET.Element("Document")
+	for e in document_keep[0:5]:
+		target_document.append(e)
+	target_document[0].text = 'filtered'
+	target_document.append(target_folder)
+	target_document.append(document_keep[-1])
+
+	# <XML>
+	# target_root = ET.Element("{%s}kml" % kml_ns[''])
+	target_root = ET.Element("kml")
+	target_root.append(target_document)
+	# target_root.set('xmlns',kml_ns['']) #not sure why namespace can't be copied as attrib
+	# target_root.set(f'xmlns:gx',kml_ns['gx'])
+	# target_root.set(f'xmlns:kml',kml_ns['kml'])
+	# target_root.set(f'xmlns:atom',kml_ns['atom'])
 	target_tree = ET.ElementTree(target_root)
-	target_tree.write('filtered.kml',xml_declaration=True,encoding='UTF-8')
+	# target_tree.write('filtered.kml',encoding='UTF-8',xml_declaration=True,default_namespace=None,method='html')
 	
 
 ####################################################################################################
@@ -545,3 +573,5 @@ if __name__ == '__main__':
 
 	if args.kml:
 		filter_tile_kml()
+
+
