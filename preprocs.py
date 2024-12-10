@@ -10,6 +10,8 @@ import multiprocessing as mp
 import time
 from PIL import Image
 import sys
+import argparse
+import zipfile
 
 # Typing
 from typing import Tuple, List
@@ -36,6 +38,18 @@ WATER_MIN = 128*64 #1/8 of the image
 WATER_MAX = CHIP_SIZE*CHIP_SIZE-WATER_MIN #balanced for 1/8 land
 BAD_PX    = 3276
 
+parser = argparse.ArgumentParser(
+	prog="preprocs.py",
+	description="Preprocessing (chipping) of Sentinel-2 and DynamicWorld V1 images.")
+
+parser.add_argument('--plots',action='store_true',default=False,
+	help='Plot a sample of inputs and labels.',dest='plots')
+parser.add_argument('--chips',action='store_true',default=False,
+	help='Process .SAFE folders in data directory to create a dataset of raster chips.',dest='chips')
+parser.add_argument('--kml',action='store_true',default=False,
+	help='Filter original Sentinel-2 tile grid and create two files for AOI. Useful for dataset plots.',dest='kml')
+
+####################################################################################################
 # Tired of keeping track of parameters...
 class Product():
 	def __init__(self,safe_id):
@@ -58,7 +72,7 @@ class Product():
 		self.dw_reader = rio.open(self.dw_path,'r',tiled=True)
 
 		#4.DW READER -> BOUNDS DW
-		#5.DW BOUNDS + DW READER+BAND2 READER -> BOUNDS S2 & BOUNDS DW
+		#5.DW READER+BAND2 READER -> BOUNDS S2 & BOUNDS DW
 		self.s2_borders, self.dw_borders = align(self.s2_readers[0],self.dw_reader)
 	
 		#DATE_DSTRIP_TILE_ROTATION_WINROW_WINCOL_B0*.tif
@@ -73,30 +87,6 @@ class Product():
 		datastrip = parse_xml(xml_path)
 		return '_'.join([self.date,datastrip,self.tile])
 
-def prep_product(s2_id: str) -> Tuple:
-	'''
-	Do all the stuff needed before any step/plots
-	'''
-	#1.1 ID -> BAND READERS
-	s2_filenames = get_band_filenames(s2_id) #always sorted
-	s2_reader    = rio.open(DATA_DIR+'/'+s2_id+'/'+s2_filenames[0],'r')
-	#1.2 ID -> XML PATH
-	#2.XML -> DW PATH
-	#3.DW PATH -> DW READER
-	xml_path  = glob.glob('/'.join([DATA_DIR,s2_id,'/*.xml']))[0]
-	datastrip = parse_xml(xml_path)
-	date,tile = s2_id.split('_')[2:6:3]
-	gee_id    = '_'.join([date,datastrip,tile])
-	dw_path   = '/'.join([LABEL_DIR,gee_id]) + '.tif'
-	dw_reader = rio.open(dw_path,'r',tiled=True,blockxsize=CHIP_SIZE,blockysize=CHIP_SIZE)
-	#4.DW READER -> BOUNDARIES DW
-	#5.BOUNDARIES DW + B2 BAND READER -> BOUNDARIES S2 & BOUNDARIES DW
-	s2_borders,dw_borders = align(s2_reader,dw_reader)
-	#DATE_DSTRIP_TILE_ROTATION_WINROW_WINCOL_B0*.tif
-	#DATE_DSTRIP_TILE_ROTATION_WINROW_WINCOL_LBL.tif	
-	rotation = s2_id[33:37]
-	base_chip_id = gee_id + '_' + rotation
-	return s2_reader,s2_borders,dw_reader,dw_borders,base_chip_id
 
 ####################################################################################################
 # PLOTS
@@ -133,6 +123,57 @@ def plot_label_singleclass(path,dw_reader,dw_borders,dw_windows):
 
 	out_ptr.close()
 	print("Label sample written to: %s" % path)
+
+
+def filter_tile_kml():
+
+	kml_ns = {
+		'':"http://www.opengis.net/kml/2.2",
+		'gx':"http://www.opengis.net/kml/2.2",
+		'kml':"http://www.opengis.net/kml/2.2",
+		'atom':"http://www.w3.org/2005/Atom"
+	}
+
+	kml_path = 'S2A_OPER_GIP_TILPAR_MPC__20151209T095117_V20150622T000000_21000101T000000_B00.kml'
+
+	if not os.path.isfile(kml_path):
+		#unzip
+		zip_path = kml_path[0:-4]+'.zip'
+		if not os.path.isfile(zip_path):
+			print("No KML or ZIP file found for plotting tiles.")
+			return
+		else:
+			try:
+				print(f"Extracting {zip_path}")
+				with zipfile.ZipFile(zip_path,'r') as zp:
+					zp.extractall('./')
+			except:
+				print("Could not extract KML from .zip file.")
+				return
+	
+
+	source_root = ET.parse(kml_path).getroot()
+	# <-----------------------------------TO DO HERE.
+	pass
+
+	document_keep      = [e for e in source_root[0][0:5]]
+	source_folder      = source_root[0][5] #the list
+	source_folder_keep = [folder[0],folder[1]]
+
+	target_document = ET.Element("{%s}Document" % kml_ns[''])
+	target_folder = ET.Element("{%s}Folder" % kml_ns[''])
+
+	for tile in source_folder.findall('Placemark',kml_ns):
+		#CHECK ID
+		pass
+
+	target_root.set('xmlns',kml_ns['']) #not sure why namespace can't be copied as attrib
+	target_root.set(f'xmlns:gx',kml_ns['gx'])
+	target_root.set(f'xmlns:kml',kml_ns['kml'])
+	target_root.set(f'xmlns:atom',kml_ns['atom'])
+	target_tree = ET.ElementTree(target_root)
+	target_tree.write('filtered.kml',xml_declaration=True,encoding='UTF-8')
+	
 
 ####################################################################################################
 # STRINGS+PARSING
@@ -455,7 +496,7 @@ def chip_image_worker(rgbn,dw_path,s2_windows,dw_windows,base_id,lock):
 		img = Image.fromarray(lbl_arr)
 		img.save(outfile)
 
-		stats.append(f'{outfile}\t{n_water}\n')
+		stats.append(f'{outfile.split("/")[-1]}\t{n_water}\n')
 
 	# LOG
 	lock.acquire()
@@ -468,32 +509,39 @@ def chip_image_worker(rgbn,dw_path,s2_windows,dw_windows,base_id,lock):
 
 if __name__ == '__main__':
 	#<--------------- ADD ARGPARSE ARGV TO STEP HERE
+	args = parser.parse_args()
 	# folder_check() 
 
-	#.SAFE folders in data directory
-	folders = glob.glob('*.SAFE',root_dir=DATA_DIR)
-	paths   = glob.glob(DATA_DIR+'/*.SAFE')
+	if args.chips:
+		#.SAFE folders in data directory
+		folders = glob.glob('*.SAFE',root_dir=DATA_DIR)
+		paths   = glob.glob(DATA_DIR+'/*.SAFE')
 
-	# Check everything is there
-	if not os.path.isdir(DATA_DIR):
-		print("DATA_DIR not found. EXITING.")
-		sys.exit()
-	else:
-		print(f"DATA_DIR set to: {DATA_DIR}")
+		# Check everything is there
+		if not os.path.isdir(DATA_DIR):
+			print("DATA_DIR not found. EXITING.")
+			sys.exit()
+		else:
+			print(f"DATA_DIR set to: {DATA_DIR}")
 
-	if not os.path.isdir(LABEL_DIR):
-		print("LABEL_DIR not found. EXITING.")
-		sys.exit()
+		if not os.path.isdir(LABEL_DIR):
+			print("LABEL_DIR not found. EXITING.")
+			sys.exit()
 
-	#make chip dir if not already there
-	if not os.path.isdir(CHIP_DIR):
-		os.mkdir(CHIP_DIR)
+		#make chip dir if not already there
+		if not os.path.isdir(CHIP_DIR):
+			os.mkdir(CHIP_DIR)
 
-	#clean log file
-	if os.path.isfile(CHIP_DIR+'/stats.txt'):
-		os.remove(CHIP_DIR+'/stats.txt')
+		#clean log file
+		if os.path.isfile(CHIP_DIR+'/stats.txt'):
+			os.remove(CHIP_DIR+'/stats.txt')
 
-	# test_product = Product(folders[0])
-	for f in folders:
-		product = Product(f) #load metadata
-		chip_image(product) #chip
+		for f in folders:
+			product = Product(f) #load metadata
+			chip_image(product) #chip
+
+	if args.plots:
+		pass
+
+	if args.kml:
+		filter_tile_kml()
