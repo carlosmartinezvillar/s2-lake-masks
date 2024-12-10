@@ -150,10 +150,16 @@ def filter_tile_kml(drop=False):
 	# tiles = [p.split('-'[5][1:] for p in products)]
 	products = glob.glob('*.tif',root_dir=f'{DATA_DIR}/dynamicworld')
 	if drop:
-		tiles = np.unique([p.split('_')[2][1:6] for p in products if p!='11TKE' and p!='11SKD'])
+		products = [p.split('_')[2][1:6] for p in products if p!='11TKE' and p!='11SKD']
 	else:
-		tiles = np.unique([p.split('_')[2][1:6] for p in products])
-	tiles = list(tiles)
+		products = [p.split('_')[2][1:6] for p in products]
+	tiles_unique,counts = np.unique(products,return_counts=True)
+	tiles = list(tiles_unique)
+
+	print("RASTERS PER TILE")
+	print("-")*80
+	for t,c in zip(tiles_unique,counts):
+		print(f"{t} | {c} | " + "*"*(c//2))
 
 	kml_ns = {
 		'':"http://www.opengis.net/kml/2.2",
@@ -162,12 +168,15 @@ def filter_tile_kml(drop=False):
 		'atom':"http://www.w3.org/2005/Atom"
 	}
 
-	
-	ET.register_namespace('',"http://www.opengis.net/kml/2.2")
-
 	#PARSE ORIGINAL SENTINEL-2 KML
-	source_root        = ET.parse(kml_path).getroot()
-	source_folder      = source_root[0][5] #the list
+	source_root = ET.parse(kml_path).getroot() #<kml>, source_root[0] <Document>
+
+	#NAMESPACES GOT SILLY JUST REMOVE THEM
+	for e in source_root.iter():
+		ns,_ = e.tag.split('}')
+		e.tag = _
+
+	source_folder      = source_root[0][5] #<Folder>
 	document_keep      = [e for e in source_root[0][0:5]] + [source_root[0][6]]
 
 	# START APPENDING STUFF TO NEW KML
@@ -187,21 +196,22 @@ def filter_tile_kml(drop=False):
 	target_document = ET.Element("Document")
 	for e in document_keep[0:5]:
 		target_document.append(e)
+	target_document.text = '\n'
 	target_document[0].text = 'filtered'
 	target_document.append(target_folder)
-	target_document.append(document_keep[-1])
 
 	# <XML>
 	# target_root = ET.Element("{%s}kml" % kml_ns[''])
 	target_root = ET.Element("kml")
+	target_root.text = '\n'
 	target_root.append(target_document)
-	# target_root.set('xmlns',kml_ns['']) #not sure why namespace can't be copied as attrib
-	# target_root.set(f'xmlns:gx',kml_ns['gx'])
-	# target_root.set(f'xmlns:kml',kml_ns['kml'])
-	# target_root.set(f'xmlns:atom',kml_ns['atom'])
-	target_tree = ET.ElementTree(target_root)
-	# target_tree.write('filtered.kml',encoding='UTF-8',xml_declaration=True,default_namespace=None,method='html')
-	
+	target_root.set('xmlns',kml_ns['']) #not sure why namespace can't be copied as attrib
+	target_root.set(f'xmlns:gx',kml_ns['gx'])
+	target_root.set(f'xmlns:kml',kml_ns['kml'])
+	target_root.set(f'xmlns:atom',kml_ns['atom'])
+	target_tree = ET.ElementTree(target_root)	
+	target_tree.write('filtered.kml',encoding='UTF-8',xml_declaration=True,default_namespace=None,method='xml')
+	print("KML file written to filtered.kml")
 
 ####################################################################################################
 # STRINGS+PARSING
