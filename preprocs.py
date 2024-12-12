@@ -491,8 +491,8 @@ def chip_image(product):
 	s2_windows = get_windows(product.s2_borders)
 	dw_windows = get_windows(product.dw_borders)	
 	n_proc   = mp.cpu_count() - 1
-	if n_proc > 16:
-		n_proc = 16
+	if n_proc > 32:
+		n_proc = 32
 	share    = len(s2_windows) // n_proc
 	leftover = len(s2_windows) % n_proc
 	start    = [i*share for i in range(n_proc)]
@@ -582,8 +582,9 @@ if __name__ == '__main__':
 			sys.exit()
 
 		#make chip dir if not already there
+		# ---> cannot check which chips already there because cannot know chips per raster.
 		if not os.path.isdir(CHIP_DIR):
-			os.mkdir(CHIP_DIR)
+			os.mkdir(CHIP_DIR) 
 
 		#clean log file
 		if os.path.isfile(CHIP_DIR+'/stats.txt'):
