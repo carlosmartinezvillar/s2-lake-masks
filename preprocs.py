@@ -491,8 +491,8 @@ def chip_image(product):
 	s2_windows = get_windows(product.s2_borders)
 	dw_windows = get_windows(product.dw_borders)	
 	n_proc   = mp.cpu_count() - 1
-	if n_proc > 32:
-		n_proc = 32
+	if n_proc > 16:
+		n_proc = 16
 	share    = len(s2_windows) // n_proc
 	leftover = len(s2_windows) % n_proc
 	start    = [i*share for i in range(n_proc)]
@@ -587,8 +587,8 @@ if __name__ == '__main__':
 			os.mkdir(CHIP_DIR) 
 
 		#clean log file
-		if os.path.isfile(CHIP_DIR+'/stats.txt'):
-			os.remove(CHIP_DIR+'/stats.txt')
+		# if os.path.isfile(CHIP_DIR+'/stats.txt'):
+			# os.remove(CHIP_DIR+'/stats.txt')
 
 		for f in folders:
 			product = Product(f) #load metadata
