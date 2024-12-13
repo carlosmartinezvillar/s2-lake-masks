@@ -479,7 +479,7 @@ def chip_image(product,index,N):
 	# NORMALIZE BANDS
 	rgbn = []
 	for reader in product.s2_readers:
-		print(f'Loading {reader.name[-34:]}')
+		# print(f'Loading {reader.name[-34:]}')
 		band_array = reader.read(1)
 		zero_mask  = band_array == 0
 		cutoff     = np.percentile(band_array[~zero_mask],99)
@@ -491,8 +491,8 @@ def chip_image(product,index,N):
 	s2_windows = get_windows(product.s2_borders)
 	dw_windows = get_windows(product.dw_borders)	
 	n_proc   = mp.cpu_count() - 1
-	if n_proc > 16:
-		n_proc = 16
+	if n_proc > 32:
+		n_proc = 32
 	share    = len(s2_windows) // n_proc
 	leftover = len(s2_windows) % n_proc
 	start    = [i*share for i in range(n_proc)]
@@ -515,6 +515,7 @@ def chip_image(product,index,N):
 
 	for p in processes:
 		p.join()
+	print("All workers done.")
 
 
 def chip_image_worker(rgbn,dw_path,s2_windows,dw_windows,base_id,lock):
@@ -554,7 +555,7 @@ def chip_image_worker(rgbn,dw_path,s2_windows,dw_windows,base_id,lock):
 
 	# LOG
 	lock.acquire()
-	print(f'Worker {mp.current_process()} done.')	
+	# print(f'Worker {mp.current_process()} done.')	
 	with open(f'{CHIP_DIR}/stats.txt','a') as fp:
 		for line in stats:
 			fp.write(line)
