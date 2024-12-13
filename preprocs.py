@@ -471,8 +471,8 @@ def folder_check():
 			print(rf)
 
 
-def chip_image(product):
-	print(f'PROCESSING {product.id} ')
+def chip_image(product,index,N):
+	print(f'[{index}/{N}] PROCESSING {product.id} ')
 	# rgbn_fnames = get_band_filenames(product.safe_id)
 	# rgbn_readers = [rio.open(f'{DATA_DIR}/{product.safe_id}/{f}','r') for f in rgbn_fnames]
 
@@ -504,13 +504,17 @@ def chip_image(product):
 	lock = mp.Lock()
 
 	#THROW WORKERS AT ARRAYS
+	processes = []
 	for i in range(n_proc):
 		p = mp.Process(
 			target=chip_image_worker,
 			args=(rgbn,product.dw_path,s2_chunks[i],dw_chunks[i],product.base_chip_id,lock)
 			)
 		p.start()
-	p.join()
+		processes.append(p)
+
+	for p in processes:
+		p.join()
 
 
 def chip_image_worker(rgbn,dw_path,s2_windows,dw_windows,base_id,lock):
@@ -590,9 +594,10 @@ if __name__ == '__main__':
 		# if os.path.isfile(CHIP_DIR+'/stats.txt'):
 			# os.remove(CHIP_DIR+'/stats.txt')
 
-		for f in folders:
+		N = len(folders)
+		for i,f in enumerate(folders):
 			product = Product(f) #load metadata
-			chip_image(product) #chip
+			chip_image(product,i,N) #chip
 
 	if args.plots:
 		pass
