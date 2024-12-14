@@ -512,7 +512,7 @@ def chip_image(product,index,N):
 		processes.append(p)
 
 	for p in processes:
-		p.join()
+		p.join(timeout=60)
 	print("All workers done.")
 
 
