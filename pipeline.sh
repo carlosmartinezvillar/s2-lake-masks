@@ -3,14 +3,18 @@
 DATA_DIR=/cache
 N_TRANSFERS=32
 
+# - git clone https://github.com/carlosmartinezvillar/s2-lake-masks.git && echo REPO CLONED;
+#   cd s2-lake-masks;
+
 string_list=$(rclone lsf nrp:s2-lakes-clean | grep .SAFE | awk '{print substr($0,1,length($0)-1)}')
-read -ra array <<< $string_list
-# echo "${array[@]}" -- whole array
+# read -ra array <<< $string_list
+# echo "${array[@]}" #-- whole array
 # echo "${#array[@]}" -- length
+array=(${string_list})
+echo ${array[@]}
 
 # COPY LABEL SET IN REMOTE TO /${DATA_DIR}/dynamicworld
 # rclone copy nrp:s2-lakes-clean/dynamicworld ${DATA_DIR}/dynamicworld -P --transfers ${N_TRANSFERS}
-
 
 chunk_size=50
 n_chunks=$(((${#array[@]}) / chunk_size))
@@ -53,7 +57,6 @@ chunk=("${array[@]:$start:$remainder}")
 
 #TEMP CHUNK
 printf "%s/**\n" "${chunk[@]}" > "${DATA_DIR}/chunk.txt"
-cat ${DATA_DIR}/chunk.txt && cat ${DATA_DIR}/chunk.txt | wc
 
 #TRANSFER TO LOCAL CACHE
 # rclone copy --include-from ${DATA_DIR}/chunk.txt nrp:s2-lakes-clean ${DATA_DIR} -P	--transfers ${N_TRANSFERS}
