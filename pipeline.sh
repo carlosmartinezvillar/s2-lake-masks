@@ -13,7 +13,7 @@ echo ${#array[@]}
 # COPY LABEL SET IN REMOTE TO /${DATA_DIR}/dynamicworld
 rclone copy nrp:s2-lakes-clean/dynamicworld ${DATA_DIR}/dynamicworld -P --transfers ${N_TRANSFERS}
 
-chunk_size=50
+chunk_size=25
 n_chunks=$(((${#array[@]}) / chunk_size))
 remainder=$((${#array[@]} - chunk_size * n_chunks))
 
