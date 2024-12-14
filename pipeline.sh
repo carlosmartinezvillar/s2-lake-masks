@@ -3,15 +3,12 @@
 DATA_DIR=/cache
 N_TRANSFERS=32
 
-# - git clone https://github.com/carlosmartinezvillar/s2-lake-masks.git && echo REPO CLONED;
-#   cd s2-lake-masks;
-
 string_list=$(rclone lsf nrp:s2-lakes-clean | grep .SAFE | awk '{print substr($0,1,length($0)-1)}')
+array=(${string_list})
+echo ${#array[@]}
 # read -ra array <<< $string_list
 # echo "${array[@]}" #-- whole array
 # echo "${#array[@]}" -- length
-array=(${string_list})
-echo ${array[@]}
 
 # COPY LABEL SET IN REMOTE TO /${DATA_DIR}/dynamicworld
 # rclone copy nrp:s2-lakes-clean/dynamicworld ${DATA_DIR}/dynamicworld -P --transfers ${N_TRANSFERS}
