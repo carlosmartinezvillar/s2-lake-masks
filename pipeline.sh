@@ -12,7 +12,7 @@ read -ra array <<< $string_list
 rclone copy nrp:s2-lakes-clean/dynamicworld ${DATA_DIR}/dynamicworld -P --transfers ${N_TRANSFERS}
 
 
-chunk_size=50
+chunk_size=10
 n_chunks=$(((${#array[@]}) / chunk_size))
 remainder=$((${#array[@]} - chunk_size * n_chunks))
 
