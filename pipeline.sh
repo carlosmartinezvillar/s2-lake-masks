@@ -1,14 +1,11 @@
 #!/bin/bash
 
-DATA_DIR=/cache
-N_TRANSFERS=32
+# DATA_DIR=/cache
+DATA_DIR=~/Desktop/lake_chips
+N_TRANSFERS=8
 
 string_list=$(rclone lsf nrp:s2-lakes-clean | grep .SAFE | awk '{print substr($0,1,length($0)-1)}')
 array=(${string_list})
-echo ${#array[@]}
-
-# echo "${array[@]}" #-- whole array
-# echo "${#array[@]}" -- length
 
 # COPY LABEL SET IN REMOTE TO /${DATA_DIR}/dynamicworld
 rclone copy nrp:s2-lakes-clean/dynamicworld ${DATA_DIR}/dynamicworld -P --transfers ${N_TRANSFERS}
@@ -45,9 +42,8 @@ for (( i=0; i<n_chunks; i++ )); do
 done
 
 # DO THE REMAINDER:
-start=$((n_chunks * chunk_size))
-end=$((start+remainder))
-echo "$start $end"
+# start=$((n_chunks * chunk_size))
+# end=$((start+remainder))
 start=$((${#array[@]}-remainder))
 end=$((${#array[@]}))
 chunk=("${array[@]:$start:$remainder}")
