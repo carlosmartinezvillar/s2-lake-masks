@@ -490,7 +490,7 @@ def chip_image(product,index,N):
 	#SPLIT WINDOWS
 	s2_windows = get_windows(product.s2_borders)
 	dw_windows = get_windows(product.dw_borders)	
-	n_proc   = 8
+	n_proc   = 16
 	share    = len(s2_windows) // n_proc
 	leftover = len(s2_windows) % n_proc
 	start    = [i*share for i in range(n_proc)]
