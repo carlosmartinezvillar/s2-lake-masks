@@ -1,7 +1,7 @@
 #!/bin/bash
 
 DATA_DIR=/cache
-N_TRANSFERS=64
+N_TRANSFERS=32
 
 string_list=$(rclone lsf nrp:s2-lakes-clean | grep .SAFE | awk '{print substr($0,1,length($0)-1)}')
 read -ra array <<< $string_list
