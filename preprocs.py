@@ -491,8 +491,8 @@ def chip_image(product,index,N):
 	s2_windows = get_windows(product.s2_borders)
 	dw_windows = get_windows(product.dw_borders)	
 	n_proc   = mp.cpu_count() - 1
-	if n_proc > 32:
-		n_proc = 32
+	if n_proc > 30:
+		n_proc = 30
 	share    = len(s2_windows) // n_proc
 	leftover = len(s2_windows) % n_proc
 	start    = [i*share for i in range(n_proc)]
@@ -568,7 +568,7 @@ if __name__ == '__main__':
 		print("DATA_DIR not found. EXITING.")
 		sys.exit()
 	print(f"DATA_DIR set to: {DATA_DIR}")	
-	if len(glob.glob('*.SAFE',root_dir=DATA_DIR)):
+	if len(glob.glob('*.SAFE',root_dir=DATA_DIR)) == 0 :
 		print("EMPTY DATA_DIR")
 	print(f"LABEL_DIR set to: {LABEL_DIR}")
 	print(f"CHIP_DIR set to: {CHIP_DIR}")

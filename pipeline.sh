@@ -1,7 +1,7 @@
 #!/bin/bash
 
 DATA_DIR=/cache
-N_TRANSFERS=64
+N_TRANSFERS=32
 
 string_list=$(rclone lsf nrp:s2-lakes-clean | grep .SAFE | awk '{print substr($0,1,length($0)-1)}')
 read -ra array <<< $string_list
@@ -28,7 +28,7 @@ for (( i=0; i<n_chunks; i++ )); do
 
 	# DOWLOAD
 	# rclone copy --include-from chunks/chunk_${i}.txt nrp:s2-lakes-clean ${DATA_DIR} -P --transfers 16
-	rclone copy --include-from ${DATA_DIR}/chunk.txt nrp:s2-lakes-clean ${DATA_DIR} -P	--transfers ${N_TRANSFERS}
+	rclone copy --include-from ${DATA_DIR}/chunk.txt nrp:s2-lakes-clean ${DATA_DIR} -P --transfers ${N_TRANSFERS}
 
 
 	#MAKE CHIPS
