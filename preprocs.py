@@ -54,7 +54,7 @@ if CHIP_DIR is None:
 
 # PIXEL LIMITS -- I suppose these are good here too bc threads/processes
 CHIP_SIZE = 256
-WATER_MIN = 128*64 #1/8 of the image
+WATER_MIN = 128*128 #1/8 of the image
 WATER_MAX = CHIP_SIZE*CHIP_SIZE-WATER_MIN #balanced for 1/8 land
 BAD_PX    = 3276
 ####################################################################################################
