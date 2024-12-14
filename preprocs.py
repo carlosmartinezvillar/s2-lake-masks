@@ -472,7 +472,7 @@ def folder_check():
 
 
 def chip_image(product,index,N):
-	print(f'[{index}/{N}] PROCESSING {product.id} ')
+	print(f'[{index}/{N-1}] PROCESSING {product.id} ')
 	# rgbn_fnames = get_band_filenames(product.safe_id)
 	# rgbn_readers = [rio.open(f'{DATA_DIR}/{product.safe_id}/{f}','r') for f in rgbn_fnames]
 
@@ -491,8 +491,8 @@ def chip_image(product,index,N):
 	s2_windows = get_windows(product.s2_borders)
 	dw_windows = get_windows(product.dw_borders)	
 	n_proc   = mp.cpu_count() - 1
-	if n_proc > 30:
-		n_proc = 30
+	if n_proc > 32:
+		n_proc = 32
 	share    = len(s2_windows) // n_proc
 	leftover = len(s2_windows) % n_proc
 	start    = [i*share for i in range(n_proc)]
