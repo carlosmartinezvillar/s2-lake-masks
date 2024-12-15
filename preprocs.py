@@ -61,6 +61,9 @@ BAD_PX    = 3276
 # CLASSES
 ####################################################################################################
 # Tired of keeping track of parameters...
+class EmptyLabelError(Exception):
+	pass
+
 class Product():
 	def __init__(self,safe_id):
 		self.id    = safe_id
@@ -81,12 +84,16 @@ class Product():
 		self.dw_path   = f'{LABEL_DIR}/{self.gee_id}.tif'		
 		self.dw_reader = rio.open(self.dw_path,'r',tiled=True)
 
+		#Check label
+		if self.dw_reader.statistics(1).max == 0:
+			raise EmptyLabelError("Label is zero everywhere.")
+
 		#4.DW READER -> BOUNDS DW
 		#5.DW READER+BAND2 READER -> BOUNDS S2 & BOUNDS DW
 		self.s2_borders, self.dw_borders = align(self.s2_readers[0],self.dw_reader)
 	
-		#DATE_DSTRIP_TILE_ROTATION_WINROW_WINCOL_B0*.tif
-		#DATE_DSTRIP_TILE_ROTATION_WINROW_WINCOL_LBL.tif	
+		#format: DATE_DSTRIP_TILE_ROTATION_WINROW_WINCOL_B0*.tif
+		#format: DATE_DSTRIP_TILE_ROTATION_WINROW_WINCOL_LBL.tif	
 		self.base_chip_id = self.gee_id + '_' + self.orbit
 
 	def get_band_filenames(self):
@@ -475,6 +482,8 @@ def chip_image(product,index,N):
 	print(f'[{index}/{N}] PROCESSING {product.id} ')
 	# rgbn_fnames = get_band_filenames(product.safe_id)
 	# rgbn_readers = [rio.open(f'{DATA_DIR}/{product.safe_id}/{f}','r') for f in rgbn_fnames]
+	start_time = time.time()
+
 
 	# NORMALIZE BANDS
 	rgbn = []
@@ -513,7 +522,9 @@ def chip_image(product,index,N):
 
 	for p in processes:
 		p.join(timeout=60)
-	print("All workers done.")
+	print("All workers done. ",end='')
+	exec_time = time.time() - start_time
+	print(f"({exec_time:.3f} seconds).")
 
 
 def chip_image_worker(rgbn,dw_path,s2_windows,dw_windows,base_id,lock):
@@ -595,7 +606,18 @@ if __name__ == '__main__':
 
 		N = len(folders)
 		for i,f in enumerate(folders):
-			product = Product(f) #load metadata
+			try:
+				product = Product(f) #load metadata
+			except EmptyLabelError as e:
+				print(f'Error:{e}')
+				print(f'Skipping {f}')
+				continue
+				# print(f'Removing {f}')
+				# safe_files = os.listdir(f'{DATA_DIR}/{f}')
+				# for file in safe_files:
+				# 	os.remove(f'{DATA_DIR}/{f}/{file}')
+				# os.remove(f'{DATA_DIR}/{f}')
+
 			chip_image(product,i,N) #chip
 
 	if args.plots:
