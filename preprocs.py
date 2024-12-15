@@ -479,7 +479,7 @@ def folder_check():
 
 
 def chip_image(product,index,N):
-	print(f'[{index}/{N}] PROCESSING {product.id} ')
+	print(f'[{index}/{N-1}] PROCESSING {product.id} ')
 	# rgbn_fnames = get_band_filenames(product.safe_id)
 	# rgbn_readers = [rio.open(f'{DATA_DIR}/{product.safe_id}/{f}','r') for f in rgbn_fnames]
 	start_time = time.time()

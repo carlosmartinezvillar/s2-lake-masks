@@ -29,6 +29,13 @@ chunk=("${array[@]:$start:$remainder}")
 printf "%s/**\n" "${chunk[@]}" > "${DATA_DIR}/chunk_${n_chunks}.txt"
 
 #--------------------- RUN:COPY AND CHIP -----------------------------
+# Essentially we're running all repeatedly:
+# rclone copy --include-from ./chunks/chunk_0.txt nrp:s2-lakes-clean . -P --transfers 32
+# python3 ../s2-lake-masks/preprocs.py --data-dir . --chip-dir ./chips --chips
+# rm -r ./*.SAFE
+# rclone copy ./chips/ nrp:lake-chips -P --transfers 32
+# rm -r ./chips/*.tif
+
 if [ DOWNLOAD == 1 ];then
 	# DOWNLOAD LABEL SET IN REMOTE 
 	rclone copy nrp:s2-lakes-clean/dynamicworld ${DATA_DIR}/dynamicworld -P --transfers ${N_TRANSFERS}
@@ -62,3 +69,4 @@ if [ DOWNLOAD == 1 ];then
 	rclone copy ${DATA_DIR}/chips nrp:lake-chips -P --transfers ${N_TRANSFERS}
 	rm  ${DATA_DIR}/chips/*.tif
 fi
+
