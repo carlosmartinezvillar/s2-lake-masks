@@ -8,7 +8,7 @@ string_list=$(rclone lsf nrp:s2-lakes-clean | grep .SAFE | awk '{print substr($0
 array=(${string_list})
 
 # Chunk math
-chunk_size=25
+chunk_size=50
 n_chunks=$(((${#array[@]}) / chunk_size))
 remainder=$((${#array[@]} - chunk_size * n_chunks))
 
@@ -35,7 +35,7 @@ for (( i=0; i<n_chunks; i++ )); do
 	rm -r ${DATA_DIR}/*.SAFE
 
 	#PUSH CHIPS (SO FAR) TO S3, CLEAN UP
-	rclone copy ${DATA_DIR}/chips nrp:lake-chips -P --transfers ${N_TRANSFERS}
+	rclone copy ${DATA_DIR}/chips nrp:lake-chips-concise -P --transfers ${N_TRANSFERS}
 	rm  ${DATA_DIR}/chips/*.tif
 done
 
@@ -56,7 +56,7 @@ python3 preprocs.py --data-dir ${DATA_DIR} --chip-dir ${DATA_DIR}/chips --chips
 rm -r ${DATA_DIR}/*.SAFE
 
 #PUSH CHIPS (SO FAR) TO S3
-rclone copy ${DATA_DIR}/chips nrp:lake-chips -P --transfers ${N_TRANSFERS}
+rclone copy ${DATA_DIR}/chips nrp:lake-chips-concise -P --transfers ${N_TRANSFERS}
 
 #CLEAN UP -- REMOVE CHIPS+TXT
 rm  ${DATA_DIR}/chips/*.tif

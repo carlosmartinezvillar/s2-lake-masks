@@ -54,7 +54,7 @@ if CHIP_DIR is None:
 
 # PIXEL LIMITS -- I suppose these are good here too bc threads/processes
 CHIP_SIZE = 256
-WATER_MIN = 128*128 #1/8 of the image
+WATER_MIN = 128*128 #1/4 of the image
 WATER_MAX = CHIP_SIZE*CHIP_SIZE-WATER_MIN #balanced for 1/8 land
 BAD_PX    = 3276
 ####################################################################################################
@@ -548,11 +548,18 @@ def chip_image_worker(rgbn,dw_path,s2_windows,dw_windows,base_id,lock):
 		# ALL GOOD -- SAVE BANDS
 		row = rowcol[0]
 		col = rowcol[1]
-		for band,name in zip(rgbn,['B02','B03','B04','B08']):
-			outfile = f'{CHIP_DIR}/{base_id}_{row:02}_{col:02}_{name}.tif'
-			img = Image.fromarray(band[w.row_off:w.row_off+CHIP_SIZE, w.col_off:w.col_off+CHIP_SIZE])
-			img.save(outfile)
-		
+		# for band,name in zip(rgbn,['B02','B03','B04','B08']):
+			# outfile = f'{CHIP_DIR}/{base_id}_{row:02}_{col:02}_{name}.tif'
+			# img = Image.fromarray(band[w.row_off:w.row_off+CHIP_SIZE, w.col_off:w.col_off+CHIP_SIZE])
+			# img.save(outfile)
+		outfile = f'{CHIP_DIR}/{base_id}_{row:02}_{col:02}_B0X.tif'
+		r = Image.fromarray(rgbn[0][w.row_off:w.row_off+CHIP_SIZE, w.col_off:w.col_off+CHIP_SIZE])
+		g = Image.fromarray(rgbn[1][w.row_off:w.row_off+CHIP_SIZE, w.col_off:w.col_off+CHIP_SIZE])
+		b = Image.fromarray(rgbn[2][w.row_off:w.row_off+CHIP_SIZE, w.col_off:w.col_off+CHIP_SIZE])
+		n = Image.fromarray(rgbn[3][w.row_off:w.row_off+CHIP_SIZE, w.col_off:w.col_off+CHIP_SIZE])
+		img = Image.merge('RGBA',(r,g,b,n))
+		img.save(outfile)
+
 		# ALL GOOD -- SAVE LABEL
 		outfile = f'{CHIP_DIR}/{base_id}_{row:02}_{col:02}_LBL.tif'
 		lbl_arr[lbl_arr!=1] = 0 #everything else (already checked for zeroes above)
@@ -611,6 +618,8 @@ if __name__ == '__main__':
 			except EmptyLabelError as e:
 				print(f'Error:{e}')
 				print(f'Skipping {f}')
+				with open(f'{CHIP_DIR}/errored.txt','a') as fp:
+					fp.write(f'{f}\n')
 				continue
 				# print(f'Removing {f}')
 				# safe_files = os.listdir(f'{DATA_DIR}/{f}')
