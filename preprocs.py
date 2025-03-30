@@ -30,10 +30,14 @@ plt.style.use('fast')
 parser = argparse.ArgumentParser(
 	prog="preprocs.py",
 	description="Preprocessing (chipping) of Sentinel-2 and DynamicWorld V1 images.")
+
+#PATHS
 parser.add_argument('--data-dir',default='./dat',
 	help="Dataset directory")
 parser.add_argument('--chip-dir',
 	help="Chip directory")
+
+#WHAT TO DO?
 parser.add_argument('--clean',action='store_true',default=False,
 	help="Remove unlabeled rasters and unnecessary files",dest='clean')
 parser.add_argument('--plots',action='store_true',default=False,
@@ -42,6 +46,7 @@ parser.add_argument('--chips',action='store_true',default=False,
 	help='Process .SAFE folders in data directory to create a dataset of raster chips.',dest='chips')
 parser.add_argument('--kml',action='store_true',default=False,
 	help='Filter original Sentinel-2 tile grid and create two files for AOI. Useful for dataset plots.',dest='kml')
+parser.add_argument('--borders',action='store_true',default=False)
 
 args = parser.parse_args()
 
@@ -60,11 +65,11 @@ BAD_PX    = 3276
 ####################################################################################################
 # CLASSES
 ####################################################################################################
-# Tired of keeping track of parameters...
 class EmptyLabelError(Exception):
+	#fancy.
 	pass
 
-class Product():
+class Product(): # Tired of keeping track of function parameters...
 	def __init__(self,safe_id):
 		self.id    = safe_id
 		self.tile  = self.id[38:44]
@@ -583,11 +588,11 @@ if __name__ == '__main__':
 	if not os.path.isdir(DATA_DIR):
 		print("DATA_DIR not found. EXITING.")
 		sys.exit()
-	print(f"DATA_DIR set to: {DATA_DIR}")	
+	print(f"DATA_DIR:  {DATA_DIR}")	
 	if len(glob.glob('*.SAFE',root_dir=DATA_DIR)) == 0 :
 		print("EMPTY DATA_DIR")
-	print(f"LABEL_DIR set to: {LABEL_DIR}")
-	print(f"CHIP_DIR set to: {CHIP_DIR}")
+	print(f"LABEL_DIR: {LABEL_DIR}")
+	print(f"CHIP_DIR:  {CHIP_DIR}")
 
 	if args.clean:
 		folder_check() 
@@ -635,4 +640,6 @@ if __name__ == '__main__':
 	if args.kml:
 		filter_tile_kml()
 
+	if args.borders:
+		pass
 
