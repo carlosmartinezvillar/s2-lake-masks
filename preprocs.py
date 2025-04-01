@@ -59,9 +59,11 @@ if CHIP_DIR is None:
 
 # PIXEL LIMITS -- I suppose these are good here too bc threads/processes
 CHIP_SIZE = 256
-WATER_MIN = 128*128 #1/4 of the image
+# WATER_MIN = 128*128 #1/4 of the image
+WATER_MIN = CHIP_SIZE*CHIP_SIZE // 4
 WATER_MAX = CHIP_SIZE*CHIP_SIZE-WATER_MIN #balanced for 1/8 land
 BAD_PX    = 3276
+STRIDE    = 256
 ####################################################################################################
 # CLASSES
 ####################################################################################################
@@ -108,7 +110,6 @@ class Product(): # Tired of keeping track of function parameters...
 		xml_path  = glob.glob(f'{DATA_DIR}/{self.id}/*.xml')[0]
 		datastrip = parse_xml(xml_path)
 		return '_'.join([self.date,datastrip,self.tile])
-
 
 ####################################################################################################
 # PLOTS
@@ -363,6 +364,31 @@ def align(s2_src: rio.DatasetReader,dw_src: rio.DatasetReader) -> Tuple:
 	return s2_ij,dw_ij	
 
 
+def get_windows_strided(borders: dict) -> [Tuple]:
+	# number of rows and cols takin' the boundaries into acct
+	n_px_rows = borders['bottom'] + 1 - borders['top']
+	n_px_cols = borders['right'] + 1 - borders['left']
+
+	#nr of overlapping (or not) blocks in each direction
+	block_rows = (n_px_rows - CHIP_SIZE) // STRIDE + 1
+	block_rows = (n_px_cols - CHIP_SIZE) // STRIDE + 1
+
+	#total blocks
+	N = block_rows * block_cols
+
+	windows = []
+
+	for k in range(N):
+		i = k // block_cols
+		j = k % block_cols
+		row_start = i * STRIDE + borders['top']
+		col_start = j * STRIDE + borders['left']
+		W = Window(col_start,row_start,CHIP_SIZE,CHIP_SIZE)
+		windows += [[(str(i),str(j)),W]]
+
+	return windows
+
+
 def get_windows(borders: dict) -> [Tuple]:
 	'''
 	Given a dicts of boundaries, returns an array list with tuples (i,j) for block indices i,j and 
@@ -370,10 +396,10 @@ def get_windows(borders: dict) -> [Tuple]:
 	within the boundaries defined by the indices in the dict. For example, if the array had two rows
 	and a column of no data (top and left) the blocks are offseted and defined as:
 
-			    left    256     512
-				| 0 0 0 0 ..
-				| 0 0 0 0 ... 	   
-	    top ----+--------+--------+
+			    left    256      512
+				| 0 0 ..  	      |
+				| 0 0... |		  | 
+	    top ----+--------+--------+----
 		    0 0 |        |        |
 		    0 0 | (0, 0) | (0, 1) |
 		     .  |        |        |
@@ -381,7 +407,8 @@ def get_windows(borders: dict) -> [Tuple]:
 		     .  |        |        |
 		        | (1, 0) | (1, 1) |
 		        |        |        |
-		    512 +--------+--------+
+		512 ----+--------+--------+---
+				|                 |
 
 	Parameters
 	----------
@@ -391,13 +418,13 @@ def get_windows(borders: dict) -> [Tuple]:
 	'''
 
 	# number of rows and cols takin' the boundaries into acct
-	n_rows = borders['bottom'] + 1 - borders['top']
-	n_cols = borders['right'] + 1 - borders['left']
+	n_px_rows = borders['bottom'] + 1 - borders['top']
+	n_px_cols = borders['right'] + 1 - borders['left']
 
 	#nr of blocks in each direction
-	block_rows = n_rows // CHIP_SIZE
-	block_cols = n_cols // CHIP_SIZE
-	
+	block_rows = n_px_rows // CHIP_SIZE
+	block_cols = n_px_cols // CHIP_SIZE
+
 	#total blocks
 	N = block_rows * block_cols
 
@@ -591,6 +618,7 @@ if __name__ == '__main__':
 	print(f"DATA_DIR:  {DATA_DIR}")	
 	if len(glob.glob('*.SAFE',root_dir=DATA_DIR)) == 0 :
 		print("EMPTY DATA_DIR")
+		sys.exit()
 	print(f"LABEL_DIR: {LABEL_DIR}")
 	print(f"CHIP_DIR:  {CHIP_DIR}")
 
@@ -608,7 +636,6 @@ if __name__ == '__main__':
 			sys.exit()
 
 		#make chip dir if not already there
-		# ---> cannot check which chips already there because cannot know chips per raster.
 		if not os.path.isdir(CHIP_DIR):
 			os.mkdir(CHIP_DIR) 
 

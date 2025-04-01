@@ -2,7 +2,11 @@
 
 DATA_DIR=/cache
 N_TRANSFERS=64
+DEST_BUCKET=nrp:lake-chips-512
 
+#==================================================
+# SET CHUNKS OF .SAFE FOLDERS TO DOWNLOAD
+#==================================================
 # Rclone dir to list
 string_list=$(rclone lsf nrp:s2-lakes-clean | grep .SAFE | awk '{print substr($0,1,length($0)-1)}')
 array=(${string_list})
@@ -12,8 +16,14 @@ chunk_size=50
 n_chunks=$(((${#array[@]}) / chunk_size))
 remainder=$((${#array[@]} - chunk_size * n_chunks))
 
-# DOWNLOAD LABEL SET IN REMOTE 
+#==================================================
+# DOWNLOAD WHOLE LABEL SET IN REMOTE 
+#==================================================
 rclone copy nrp:s2-lakes-clean/dynamicworld ${DATA_DIR}/dynamicworld -P --transfers ${N_TRANSFERS}
+
+#==================================================
+# ITERATE--DOWNLOAD, CHIP & PUSH
+#==================================================
 
 # EVEN CHUNKS
 #--------------------- 
@@ -35,7 +45,7 @@ for (( i=0; i<n_chunks; i++ )); do
 	rm -r ${DATA_DIR}/*.SAFE
 
 	#PUSH CHIPS (SO FAR) TO S3, CLEAN UP
-	rclone copy ${DATA_DIR}/chips nrp:lake-chips-concise -P --transfers ${N_TRANSFERS}
+	rclone copy ${DATA_DIR}/chips ${DEST_BUCKET} -P --transfers ${N_TRANSFERS}
 	rm  ${DATA_DIR}/chips/*.tif
 done
 
@@ -56,8 +66,8 @@ python3 preprocs.py --data-dir ${DATA_DIR} --chip-dir ${DATA_DIR}/chips --chips
 rm -r ${DATA_DIR}/*.SAFE
 
 #PUSH CHIPS (SO FAR) TO S3
-rclone copy ${DATA_DIR}/chips nrp:lake-chips-concise -P --transfers ${N_TRANSFERS}
+rclone copy ${DATA_DIR}/chips ${DEST_BUCKET} -P --transfers ${N_TRANSFERS}
 
-#CLEAN UP -- REMOVE CHIPS+TXT
-rm  ${DATA_DIR}/chips/*.tif
-rm ${DATA_DIR}/chunk.txt
+#CLEAN UP -- REMOVE CHIPS
+# rm  ${DATA_DIR}/chips/*.tif
+# rm ${DATA_DIR}/chunk.txt
