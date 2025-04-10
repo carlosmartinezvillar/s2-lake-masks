@@ -58,12 +58,13 @@ if CHIP_DIR is None:
 	CHIP_DIR  = DATA_DIR+'/chips' #Subdir in same place as .SAFE folders
 
 # PIXEL LIMITS -- I suppose these are good here too bc threads/processes
-CHIP_SIZE = 256
+CHIP_SIZE = 512
 # WATER_MIN = 128*128 #1/4 of the image
 WATER_MIN = CHIP_SIZE*CHIP_SIZE // 4
 WATER_MAX = CHIP_SIZE*CHIP_SIZE-WATER_MIN #balanced for 1/8 land
 BAD_PX    = 3276
 STRIDE    = 256
+N_PROC    = 32
 ####################################################################################################
 # CLASSES
 ####################################################################################################
@@ -259,12 +260,6 @@ def get_gee_id(s2_id: str) -> str:
 	date,tile = s2_id.split('_')[2:6:3]
 	gee_id    = '_'.join([date,datastrip,tile])
 	return gee_id
-
-
-def get_band_filenames(s2_id: str) -> [str]:
-	tile = s2_id[38:44]
-	date = s2_id[11:26]
-	return ['_'.join([tile,date,b,'10m.jp2']) for b in ['B02','B03','B04','B08']]
 
 
 ####################################################################################################
@@ -512,10 +507,7 @@ def folder_check():
 
 def chip_image(product,index,N):
 	print(f'[{index}/{N-1}] PROCESSING {product.id} ')
-	# rgbn_fnames = get_band_filenames(product.safe_id)
-	# rgbn_readers = [rio.open(f'{DATA_DIR}/{product.safe_id}/{f}','r') for f in rgbn_fnames]
 	start_time = time.time()
-
 
 	# NORMALIZE BANDS
 	rgbn = []
@@ -529,13 +521,14 @@ def chip_image(product,index,N):
 		rgbn.append(band_array)
 
 	#SPLIT WINDOWS
-	s2_windows = get_windows(product.s2_borders)
-	dw_windows = get_windows(product.dw_borders)	
-	n_proc   = 16
-	share    = len(s2_windows) // n_proc
-	leftover = len(s2_windows) % n_proc
-	start    = [i*share for i in range(n_proc)]
-	stop     = [i*share+share for i in range(n_proc)]
+	# s2_windows = get_windows(product.s2_borders)
+	# dw_windows = get_windows(product.dw_borders)	
+	s2_windows = get_windows_strided(product.s2_borders)
+	dw_windows = get_windows_strided(product.dw_borders)
+	share    = len(s2_windows) // N_PROC
+	leftover = len(s2_windows) % N_PROC
+	start    = [i*share for i in range(N_PROC)]
+	stop     = [i*share+share for i in range(N_PROC)]
 	stop[-1] += leftover
 	s2_chunks = [s2_windows[s0:s1] for s0,s1 in zip(start,stop)]
 	dw_chunks = [dw_windows[s0:s1] for s0,s1 in zip(start,stop)]	
@@ -544,7 +537,7 @@ def chip_image(product,index,N):
 
 	#THROW WORKERS AT ARRAYS
 	processes = []
-	for i in range(n_proc):
+	for i in range(N_PROC):
 		p = mp.Process(
 			target=chip_image_worker,
 			args=(rgbn,product.dw_path,s2_chunks[i],dw_chunks[i],product.base_chip_id,lock)
@@ -659,7 +652,7 @@ if __name__ == '__main__':
 				# 	os.remove(f'{DATA_DIR}/{f}/{file}')
 				# os.remove(f'{DATA_DIR}/{f}')
 
-			chip_image(product,i,N) #chip
+			chip_image(product,i,N) # <----- CHIP
 
 	if args.plots:
 		pass
