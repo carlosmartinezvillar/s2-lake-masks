@@ -13,7 +13,7 @@ string_list=$(rclone lsf ${ORIG_BUCKET} | grep .SAFE | awk '{print substr($0,1,l
 array=(${string_list})
 
 # Chunk math
-chunk_size=50
+chunk_size=64
 n_chunks=$(((${#array[@]}) / chunk_size))
 remainder=$((${#array[@]} - chunk_size * n_chunks))
 
