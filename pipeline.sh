@@ -1,7 +1,7 @@
 #!/bin/bash
 
 DATA_DIR=/cache
-N_TRANSFERS=64
+N_TRANSFERS=16
 DEST_BUCKET=nrp:lake-chips-512
 ORIG_BUCKET=nrp:s2-lakes-clean
 
@@ -13,7 +13,7 @@ string_list=$(rclone lsf ${ORIG_BUCKET} | grep .SAFE | awk '{print substr($0,1,l
 array=(${string_list})
 
 # Chunk math
-chunk_size=64
+chunk_size=32
 n_chunks=$(((${#array[@]}) / chunk_size))
 remainder=$((${#array[@]} - chunk_size * n_chunks))
 
