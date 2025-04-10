@@ -646,11 +646,6 @@ if __name__ == '__main__':
 				with open(f'{CHIP_DIR}/errored.txt','a') as fp:
 					fp.write(f'{f}\n')
 				continue
-				# print(f'Removing {f}')
-				# safe_files = os.listdir(f'{DATA_DIR}/{f}')
-				# for file in safe_files:
-				# 	os.remove(f'{DATA_DIR}/{f}/{file}')
-				# os.remove(f'{DATA_DIR}/{f}')
 
 			chip_image(product,i,N) # <----- CHIP
 
@@ -661,5 +656,6 @@ if __name__ == '__main__':
 		filter_tile_kml()
 
 	if args.borders:
+		#Get px (0,0) coordinates per tile estimate locations of chips.
 		pass
 
