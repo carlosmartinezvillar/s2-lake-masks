@@ -366,7 +366,7 @@ def get_windows_strided(borders: dict) -> [Tuple]:
 
 	#nr of overlapping (or not) blocks in each direction
 	block_rows = (n_px_rows - CHIP_SIZE) // STRIDE + 1
-	block_rows = (n_px_cols - CHIP_SIZE) // STRIDE + 1
+	block_cols = (n_px_cols - CHIP_SIZE) // STRIDE + 1
 
 	#total blocks
 	N = block_rows * block_cols
