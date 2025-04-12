@@ -68,8 +68,10 @@ N_PROC    = 32
 ####################################################################################################
 # CLASSES
 ####################################################################################################
-class EmptyLabelError(Exception):
-	#fancy.
+class EmptyLabelError(Exception): #fancy.
+	pass
+
+class IncompleteDirError(Exception):
 	pass
 
 class Product(): # Tired of keeping track of function parameters...
@@ -83,7 +85,10 @@ class Product(): # Tired of keeping track of function parameters...
 		self.s2_fnames  = self.get_band_filenames() #sorted
 		self.s2_readers = []
 		for f in self.s2_fnames:
-			self.s2_readers += [rio.open(f'{DATA_DIR}/{safe_id}/{f}','r',tiled=True)]
+			band_path = f'{DATA_DIR}/{safe_id}/{f}'
+			if not os.path.isfile(band_path):
+				raise IncompleteDirError(f"Missing band file {f}")
+			self.s2_readers += [rio.open(band_path,'r',tiled=True)]
 
 		#1.2 ID -> XML PATH
 		#2.XML -> DW PATH
@@ -98,7 +103,7 @@ class Product(): # Tired of keeping track of function parameters...
 
 		#4.DW READER -> BOUNDS DW
 		#5.DW READER+BAND2 READER -> BOUNDS S2 & BOUNDS DW
-		self.s2_borders, self.dw_borders = align(self.s2_readers[0],self.dw_reader)
+		self.s2_borders,self.dw_borders = align(self.s2_readers[0],self.dw_reader)
 	
 		#format: DATE_DSTRIP_TILE_ROTATION_WINROW_WINCOL_B0*.tif
 		#format: DATE_DSTRIP_TILE_ROTATION_WINROW_WINCOL_LBL.tif	
@@ -436,6 +441,9 @@ def get_windows(borders: dict) -> [Tuple]:
 	return windows
 
 
+def check_remote():
+	pass
+
 def folder_check():
 	'''
 	1.Remove .SAFE/products without a matching dynanmic world label.
@@ -632,22 +640,23 @@ if __name__ == '__main__':
 		if not os.path.isdir(CHIP_DIR):
 			os.mkdir(CHIP_DIR) 
 
-		#clean log file
-		# if os.path.isfile(CHIP_DIR+'/stats.txt'):
-			# os.remove(CHIP_DIR+'/stats.txt')
+		# clean log file
+		if os.path.isfile(f"{CHIP_DIR}/stats.txt"):
+			os.remove(CHIP_DIR+'/stats.txt')
 
 		N = len(folders)
 		for i,f in enumerate(folders):
 			try:
 				product = Product(f) #load metadata
-			except EmptyLabelError as e:
-				print(f'Error:{e}')
-				print(f'Skipping {f}')
+			except (EmptyLabelError,IncompleteDirError) as e:
+				print(f'ERROR: {e}')
+				print(f'---> SKIPPING {f}')
 				with open(f'{CHIP_DIR}/errored.txt','a') as fp:
 					fp.write(f'{f}\n')
 				continue
 
-			chip_image(product,i,N) # <----- CHIP
+			# <----- CHIP ----->
+			chip_image(product,i,N) 
 
 	if args.plots:
 		pass
