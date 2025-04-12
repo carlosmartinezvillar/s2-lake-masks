@@ -99,7 +99,7 @@ if [ $DOWNLOAD_ALL == 1 ]; then
 	done
 
 	#.SAFE TO LOCAL CACHE
-	rclone copy --include-from ${DATA_DIR}/chunk_${n_chunks}.txt nrp:s2-lakes-clean ${DATA_DIR} -P	--transfers ${N_TRANSFERS}
+	rclone copy --include-from ${DATA_DIR}/chunk_${n_chunks}.txt ${ORIG_BUCKET} ${DATA_DIR} -P	--transfers ${N_TRANSFERS}
 
 	#MAKE CHIPS
 	python3 preprocs.py --data-dir ${DATA_DIR} --chip-dir ${DATA_DIR}/chips --chips
@@ -112,17 +112,18 @@ if [ $DOWNLOAD_ALL == 1 ]; then
 	# rm  ${DATA_DIR}/chips/*.tif
 else
 
-	if [ ! -d "${DATA_DIR}/dynamicworld" ]; then
-	  echo "Directory does not exist"
-	  # DOWNLOAD ENTIRE LABEL SET IN REMOTE 
-	  rclone copy nrp:s2-lakes-clean/dynamicworld ${DATA_DIR}/dynamicworld -P --transfers ${N_TRANSFERS}	  
-	fi
-
 	if [ $CHUNK_NR != -1 ]; then
+
+		if [ ! -d "${DATA_DIR}/dynamicworld" ]; then
+		  echo "Directory does not exist"
+		  # DOWNLOAD ENTIRE LABEL SET IN REMOTE 
+		  rclone copy ${ORIG_BUCKET}/dynamicworld ${DATA_DIR}/dynamicworld -P --transfers ${N_TRANSFERS}	  
+		fi
+
 
 		rclone copy --include-from ${DATA_DIR}/chunk_${CHUNK_NR}.txt ${ORIG_BUCKET} ${DATA_DIR} -P --transfers ${N_TRANSFERS}
 		python3 preprocs.py --data-dir ${DATA_DIR} --chip-dir ${DATA_DIR}/chips --chips
-		rm -r ${DATA_DIR}/*.SAFE
+		# rm -r ${DATA_DIR}/*.SAFE
 
 	fi
 
