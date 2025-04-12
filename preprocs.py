@@ -62,7 +62,7 @@ CHIP_SIZE = 512
 # WATER_MIN = 128*128 #1/4 of the image
 WATER_MIN = CHIP_SIZE*CHIP_SIZE // 4
 WATER_MAX = CHIP_SIZE*CHIP_SIZE-WATER_MIN #balanced for 1/8 land
-BAD_PX    = 3276
+# BAD_PX    = 3276 #unused
 STRIDE    = 256
 N_PROC    = 32
 ####################################################################################################
