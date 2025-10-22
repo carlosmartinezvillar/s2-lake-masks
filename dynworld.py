@@ -1,3 +1,8 @@
+'''
+THIS script communicates with GEE to download DynamicWorldV1 images matching the names of a list
+of Sentinel-2 products. The list of Sentinel-2 products is obtained from the directory containing
+the products. The folders of Sentinel-2 images are required to get the correct CRS for each product.
+'''
 import os
 import time
 import numpy as np

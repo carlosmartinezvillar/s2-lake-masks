@@ -1,3 +1,7 @@
+'''
+This script chips 10980x10980 Sentinel-2 images into 256x256 (or 512x512) images.
+'''
+
 import os
 import xml.etree.ElementTree as ET
 import rasterio as rio
@@ -11,7 +15,6 @@ import time
 from PIL import Image
 import sys
 import argparse
-import zipfile
 
 # Typing
 from typing import Tuple, List
@@ -24,38 +27,15 @@ ns = {
 	'another':"https://psd-14.sentinel2.eo.esa.int/PSD/User_Product_Level-2A.xsd"
 	}
 
-# Plots
-plt.style.use('fast')
-
-parser = argparse.ArgumentParser(
-	prog="preprocs.py",
-	description="Preprocessing (chipping) of Sentinel-2 and DynamicWorld V1 images.")
-
-#PATHS
-parser.add_argument('--data-dir',default='./dat',
-	help="Dataset directory")
-parser.add_argument('--chip-dir',
-	help="Chip directory")
-
-#WHAT TO DO?
-parser.add_argument('--clean',action='store_true',default=False,
-	help="Remove unlabeled rasters and unnecessary files",dest='clean')
-parser.add_argument('--plots',action='store_true',default=False,
-	help='Plot a sample of inputs and labels.',dest='plots')
-parser.add_argument('--chips',action='store_true',default=False,
-	help='Process .SAFE folders in data directory to create a dataset of raster chips.',dest='chips')
-parser.add_argument('--kml',action='store_true',default=False,
-	help='Filter original Sentinel-2 tile grid and create two files for AOI. Useful for dataset plots.',dest='kml')
-parser.add_argument('--borders',action='store_true',default=False)
-
-args = parser.parse_args()
-
+DATA_DIR = None
+LABEL_DIR = None
+CHIP_DIR = None
 #SET DIRS HERE BECAUSE THREAD ACCESS
-DATA_DIR  = args.data_dir
-LABEL_DIR = DATA_DIR+'/dynamicworld' 
-CHIP_DIR  = args.chip_dir
-if CHIP_DIR is None:
-	CHIP_DIR  = DATA_DIR+'/chips' #Subdir in same place as .SAFE folders
+# DATA_DIR  = args.data_dir
+# LABEL_DIR = DATA_DIR+'/dynamicworld' 
+# CHIP_DIR  = args.chip_dir
+# if CHIP_DIR is None:
+# 	CHIP_DIR  = DATA_DIR+'/chips' #Subdir in same place as .SAFE folders
 
 # PIXEL LIMITS -- I suppose these are good here too bc threads/processes
 CHIP_SIZE = 512
@@ -65,6 +45,7 @@ WATER_MAX = CHIP_SIZE*CHIP_SIZE-WATER_MIN #balanced for 1/8 land
 # BAD_PX    = 3276 #unused
 STRIDE    = 256
 N_PROC    = 32
+
 ####################################################################################################
 # CLASSES
 ####################################################################################################
@@ -74,7 +55,31 @@ class EmptyLabelError(Exception): #fancy.
 class IncompleteDirError(Exception):
 	pass
 
-class Product(): # Tired of keeping track of function parameters...
+class Product():
+	'''
+	An object defining a single Sentinel-2 product in the ESA database.
+
+	Parameters
+	----------
+	id:
+	tile:
+	date:
+	orbit:
+	s2_fnames:
+	s2_readers:
+	gee_id:
+	dw_path:
+	dw_reader:
+	s2_borders:
+	dw_borders:
+	base_chip_id:
+
+	Methods
+	-------
+	get_band_filenames()
+	get_gee_id()
+
+	'''
 	def __init__(self,safe_id):
 		self.id    = safe_id
 		self.tile  = self.id[38:44]
@@ -117,135 +122,13 @@ class Product(): # Tired of keeping track of function parameters...
 		datastrip = parse_xml(xml_path)
 		return '_'.join([self.date,datastrip,self.tile])
 
-####################################################################################################
-# PLOTS
-####################################################################################################
-def plot_label_singleclass(path,dw_reader,dw_borders,dw_windows):
-	'''
-	Plot workable area overlapping windows. Black and white classes.
-	'''
-	h = dw_borders['bottom'] + 1 - dw_borders['top']
-	w = dw_borders['right'] + 1 - dw_borders['left']
-	windows_height = h - (h % CHIP_SIZE) + 1 #not sure if safe
-	windows_width  = w - (w % CHIP_SIZE) + 1	
-
-	kwargs = dw_reader.meta.copy()
-	kwargs.update({'height':windows_height,'width':windows_width,'count':3,'compress':'lzw'})
-	out_ptr = rio.open(path,'w',**kwargs)
-
-	for _,w in dw_windows:
-		#read
-		arr        = dw_reader.read(1,window=w)
-		white_mask = arr == 1 #water
-		gray_mask  = arr == 0 #nodata
-		black_mask = ~(white_mask | gray_mask) #else
-
-		#change
-		arr[white_mask] = 255
-		arr[black_mask] = 0
-		arr[gray_mask]  = 128
-		arr_3d = np.repeat(arr[np.newaxis,:,:],repeats=3,axis=0)
-
-		#write
-		out_win = Window(w.col_off-dw_borders['left'],w.row_off-dw_borders['top'],CHIP_SIZE,CHIP_SIZE)
-		out_ptr.write(arr_3d,window=out_win)
-
-	out_ptr.close()
-	print("Label sample written to: %s" % path)
-
-
-def filter_tile_kml(drop=False):
-
-	# CHECK FILE OR .ZIP OF EXISTS 
-	kml_path = 'S2A_OPER_GIP_TILPAR_MPC__20151209T095117_V20150622T000000_21000101T000000_B00.kml'
-
-	if not os.path.isfile(kml_path):
-		#unzip
-		zip_path = kml_path[0:-4]+'.zip'
-		if not os.path.isfile(zip_path):
-			print("No KML or ZIP file found for plotting tiles.")
-			return
-		else:
-			try:
-				print(f"Extracting {zip_path}")
-				with zipfile.ZipFile(zip_path,'r') as zp:
-					zp.extractall('./')
-			except:
-				print("Could not extract KML from .zip file.")
-				return
-
-	#LOAD LIST OF TILES IN DATASET
-	# products = glob.glob('*.SAFE',root_dir=DATA_DIR)
-	# tiles = [p.split('-'[5][1:] for p in products)]
-	products = glob.glob('*.tif',root_dir=f'{DATA_DIR}/dynamicworld')
-	if drop:
-		products = [p.split('_')[2][1:6] for p in products if p!='11TKE' and p!='11SKD']
-	else:
-		products = [p.split('_')[2][1:6] for p in products]
-	tiles_unique,counts = np.unique(products,return_counts=True)
-	tiles = list(tiles_unique)
-
-	print("RASTERS PER TILE")
-	print("-"*80)
-	for t,c in zip(tiles_unique,counts):
-		print(f"{t} | {c} | " + "*"*(c//2))
-
-	kml_ns = {
-		'':"http://www.opengis.net/kml/2.2",
-		'gx':"http://www.opengis.net/kml/2.2",
-		'kml':"http://www.opengis.net/kml/2.2",
-		'atom':"http://www.w3.org/2005/Atom"
-	}
-
-	#PARSE ORIGINAL SENTINEL-2 KML
-	source_root = ET.parse(kml_path).getroot() #<kml>, source_root[0] <Document>
-
-	#NAMESPACES GOT SILLY JUST REMOVE THEM
-	for e in source_root.iter():
-		ns,_ = e.tag.split('}')
-		e.tag = _
-
-	source_folder      = source_root[0][5] #<Folder>
-	document_keep      = [e for e in source_root[0][0:5]] + [source_root[0][6]]
-
-	# START APPENDING STUFF TO NEW KML
-	# <FOLDER>
-	# target_folder = ET.Element("{%s}Folder" % kml_ns[''])
-	target_folder = ET.Element("Folder")
-	target_folder.insert(0,source_folder[0])
-	target_folder.insert(1,source_folder[1])
-
-	# for placemark in source_folder.findall('Placemark',kml_ns):
-	for placemark in source_folder.findall('Placemark'):
-		if placemark[0].text in tiles: #CHECK ID -- placemark[0] is name
-			target_folder.append(placemark)
-
-	# <DOCUMENT>
-	# target_document = ET.Element("{%s}Document" % kml_ns[''])
-	target_document = ET.Element("Document")
-	for e in document_keep[0:5]:
-		target_document.append(e)
-	target_document.text = '\n'
-	target_document[0].text = 'filtered'
-	target_document.append(target_folder)
-
-	# <XML>
-	# target_root = ET.Element("{%s}kml" % kml_ns[''])
-	target_root = ET.Element("kml")
-	target_root.text = '\n'
-	target_root.append(target_document)
-	target_root.set('xmlns',kml_ns['']) #not sure why namespace can't be copied as attrib
-	target_root.set(f'xmlns:gx',kml_ns['gx'])
-	target_root.set(f'xmlns:kml',kml_ns['kml'])
-	target_root.set(f'xmlns:atom',kml_ns['atom'])
-	target_tree = ET.ElementTree(target_root)	
-	target_tree.write('filtered.kml',encoding='UTF-8',xml_declaration=True,default_namespace=None,method='xml')
-	print("KML file written to filtered.kml")
 
 ####################################################################################################
 # STRINGS+PARSING
 ####################################################################################################
 def parse_xml(path):
+
+	# check path
 	assert os.path.isfile(path), "No file found in path %s" % path
 
 	# get datastrip
@@ -268,7 +151,82 @@ def get_gee_id(s2_id: str) -> str:
 
 
 ####################################################################################################
-# RASTERs
+# FOLDER/DIR 
+####################################################################################################
+def check_remote():
+	pass
+
+def folder_check():
+	'''
+	1.Remove .SAFE/products without a matching dynanmic world label.
+	2.Drop two tiles: T11SKD,T11TKE.
+	'''
+	folders = [f for f in os.listdir(DATA_DIR) if f!='dynamicworld' and f[-5:]=='.SAFE']
+	n_input, n_label = 0,0
+	removed_folders = []
+	removed_tiles   = []
+
+	# 1. FOR EACH .SAFE folder check: empty?,xml?,label?
+	for folder in folders:
+		# empty folder, remove
+		if len(os.listdir(DATA_DIR+'/'+folder)) == 0:
+			print("Empty folder %s" % folder)
+			# os.rmdir(DATA_DIR+'/'+folder)
+			continue
+
+		# get xml, continue if no xml
+		try:
+			xml_name = [f for f in os.listdir(DATA_DIR+'/'+folder) if f[-4:]=='.xml'][0]
+			xml_path = '/'.join([DATA_DIR,folder,xml_name])
+		except IndexError:
+			print("Index error. No xml file in %s. Skipping." % folder)
+			continue
+		except Exception as err:
+			print('Other error retrieving xml file in %s. Skipping.' % folder)
+			print(err)
+			continue
+
+		# get dynarmicworld id
+		dstrip   = parse_xml(xml_path)
+		date     = folder[11:26]
+		tile     = folder[38:44]
+		dw_id    = '_'.join([date,dstrip,tile])
+
+		#delete all scl's
+		scl_file = '_'.join([tile,date,'SCL','20m.jp2'])
+		scl_path = '/'.join([DATA_DIR,folder,scl_file])
+		if os.path.isfile(scl_path):
+			print("Deleting %s" % scl_path)
+			os.remove(scl_path)
+
+		#if dw...
+		if os.path.isfile(LABEL_DIR+'/'+dw_id+'.tif'):
+			# exists, check files in .SAFE
+			n_files = len([_ for _ in os.listdir(DATA_DIR +'/'+folder) if _[0]!='.'])
+			if n_files < 5:
+				print("Folder %s -- <5 files." % folder) #check
+			else:
+				print("Folder %s -- OK." % folder)
+				n_input += 1
+				n_label += 1
+		else:
+			# d.n.e, remove whole .SAFE dir
+			print("NO LABELS --> Removing folder %s" % folder)
+			for file in os.listdir(DATA_DIR+'/'+folder):
+				os.remove('/'.join([DATA_DIR,folder,file]))
+			os.rmdir(DATA_DIR+'/'+folder)
+			removed_folders.append(folder)
+
+	if len(removed_folders) == 0:
+		print("0 REMOVED.")
+	else:
+		print("%i REMOVED:" % len(removed_folders))
+		for rf in removed_folders:
+			print(rf)
+
+
+####################################################################################################
+# RASTER PROCESSING.
 ####################################################################################################
 def remove_label_borders(src: rio.DatasetReader) -> dict:
 	'''
@@ -329,7 +287,7 @@ def align(s2_src: rio.DatasetReader,dw_src: rio.DatasetReader) -> Tuple:
 	Do everything: match indices and remove borders.
 	'''
 	# 1. REMOVE DW NO-DATA BORDERS(~1-2px each side)
-	dw_ij = remove_label_borders(dw_src)
+	dw_ij = remove_label_borders(dw_src) # <---- THIS CAN BE COMBINED
 
 	# 2. MATCH DW to S2 (DW has ~20px less on each side) 
 	# DW ij's (px index) -> DW xy's (coords)
@@ -364,14 +322,14 @@ def align(s2_src: rio.DatasetReader,dw_src: rio.DatasetReader) -> Tuple:
 	return s2_ij,dw_ij	
 
 
-def get_windows_strided(borders: dict) -> [Tuple]:
+def get_windows_strided(borders: dict, chip_size: int, stride: int) -> [Tuple]:
 	# number of rows and cols takin' the boundaries into acct
 	n_px_rows = borders['bottom'] + 1 - borders['top']
 	n_px_cols = borders['right'] + 1 - borders['left']
 
 	#nr of overlapping (or not) blocks in each direction
-	block_rows = (n_px_rows - CHIP_SIZE) // STRIDE + 1
-	block_cols = (n_px_cols - CHIP_SIZE) // STRIDE + 1
+	block_rows = (n_px_rows - chip_size) // stride + 1
+	block_cols = (n_px_cols - chip_size) // stride + 1
 
 	#total blocks
 	N = block_rows * block_cols
@@ -381,9 +339,9 @@ def get_windows_strided(borders: dict) -> [Tuple]:
 	for k in range(N):
 		i = k // block_cols
 		j = k % block_cols
-		row_start = i * STRIDE + borders['top']
-		col_start = j * STRIDE + borders['left']
-		W = Window(col_start,row_start,CHIP_SIZE,CHIP_SIZE)
+		row_start = i * stride + borders['top']
+		col_start = j * stride + borders['left']
+		W = Window(col_start,row_start,chip_size,chip_image)
 		windows += [[(str(i),str(j)),W]]
 
 	return windows
@@ -441,89 +399,17 @@ def get_windows(borders: dict) -> [Tuple]:
 	return windows
 
 
-def check_remote():
-	pass
-
-def folder_check():
-	'''
-	1.Remove .SAFE/products without a matching dynanmic world label.
-	2.Drop two tiles: T11SKD,T11TKE.
-	'''
-	folders = [f for f in os.listdir(DATA_DIR) if f!='dynamicworld' and f[-5:]=='.SAFE']
-	n_input, n_label = 0,0
-	removed_folders = []
-	removed_tiles   = []
-
-	# 1. FOR EACH .SAFE folder check: empty?,xml?,label?
-	for folder in folders:
-		# empty folder, remove
-		if len(os.listdir(DATA_DIR+'/'+folder)) == 0:
-			print("Empty folder %s" % folder)
-			# os.rmdir(DATA_DIR+'/'+folder)
-			continue
-
-		# get xml, continue if no xml
-		try:
-			xml_name = [f for f in os.listdir(DATA_DIR+'/'+folder) if f[-4:]=='.xml'][0]
-			xml_path = '/'.join([DATA_DIR,folder,xml_name])
-		except IndexError:
-			print("Index error. No xml file in %s. Skipping." % folder)
-			continue
-		except Exception as err:
-			print('Other error retrieving xml file in %s. Skipping.' % folder)
-			print(err)
-			continue
-
-		# get dynarmicworld id
-		dstrip   = parse_xml(xml_path)
-		date     = folder[11:26]
-		tile     = folder[38:44]
-		dw_id    = '_'.join([date,dstrip,tile])
-
-		#delete all scl's
-		scl_file = '_'.join([tile,date,'SCL','20m.jp2'])
-		scl_path = '/'.join([DATA_DIR,folder,scl_file])
-		if os.path.isfile(scl_path):
-			print("Deleting %s" % scl_path)
-			os.remove(scl_path)
-
-		#if dw...
-		if os.path.isfile(LABEL_DIR+'/'+dw_id+'.tif'):
-			# exists, check files in .SAFE
-			n_files = len([_ for _ in os.listdir(DATA_DIR +'/'+folder) if _[0]!='.'])
-			if n_files < 5:
-				print("Folder %s -- <5 files." % folder) #check
-			else:
-				print("Folder %s -- OK." % folder)
-				n_input += 1
-				n_label += 1
-		else:
-			# d.n.e, remove whole .SAFE dir
-			print("NO LABEL --> Removing folder %s" % folder)
-			for file in os.listdir(DATA_DIR+'/'+folder):
-				os.remove('/'.join([DATA_DIR,folder,file]))
-			os.rmdir(DATA_DIR+'/'+folder)
-			removed_folders.append(folder)
-
-	if len(removed_folders) == 0:
-		print("0 REMOVED.")
-	else:
-		print("%i REMOVED:" % len(removed_folders))
-		for rf in removed_folders:
-			print(rf)
-
-
 def chip_image(product,index,N):
 	print(f'[{index}/{N-1}] PROCESSING {product.id} ')
 	start_time = time.time()
 
-	# NORMALIZE BANDS
+	# LOAD ARRAYS AND NORMALIZE BANDS
 	rgbn = []
 	for reader in product.s2_readers:
 		# print(f'Loading {reader.name[-34:]}')
 		band_array = reader.read(1)
 		zero_mask  = band_array == 0
-		cutoff     = np.percentile(band_array[~zero_mask],99)
+		cutoff     = np.percentile(band_array[~zero_mask],99) #This might have to be lower?
 		band_array = np.clip(band_array,0,cutoff)
 		band_array = (band_array / cutoff * 255).astype(np.uint8)
 		rgbn.append(band_array)
@@ -531,8 +417,8 @@ def chip_image(product,index,N):
 	#SPLIT WINDOWS
 	# s2_windows = get_windows(product.s2_borders)
 	# dw_windows = get_windows(product.dw_borders)	
-	s2_windows = get_windows_strided(product.s2_borders)
-	dw_windows = get_windows_strided(product.dw_borders)
+	s2_windows = get_windows_strided(product.s2_borders,CHIP_SIZE,STRIDE)
+	dw_windows = get_windows_strided(product.dw_borders,CHIP_SIZE,STRIDE)
 	share    = len(s2_windows) // N_PROC
 	leftover = len(s2_windows) % N_PROC
 	start    = [i*share for i in range(N_PROC)]
@@ -581,10 +467,8 @@ def chip_image_worker(rgbn,dw_path,s2_windows,dw_windows,base_id,lock):
 		# ALL GOOD -- SAVE BANDS
 		row = rowcol[0]
 		col = rowcol[1]
-		# for band,name in zip(rgbn,['B02','B03','B04','B08']):
-			# outfile = f'{CHIP_DIR}/{base_id}_{row:02}_{col:02}_{name}.tif'
-			# img = Image.fromarray(band[w.row_off:w.row_off+CHIP_SIZE, w.col_off:w.col_off+CHIP_SIZE])
-			# img.save(outfile)
+
+		# SAVE BANDS IN SINGLE [R,G,B,NIR] FILE (NIR stored in alpha)
 		outfile = f'{CHIP_DIR}/{base_id}_{row:02}_{col:02}_B0X.tif'
 		r = Image.fromarray(rgbn[0][w.row_off:w.row_off+CHIP_SIZE, w.col_off:w.col_off+CHIP_SIZE])
 		g = Image.fromarray(rgbn[1][w.row_off:w.row_off+CHIP_SIZE, w.col_off:w.col_off+CHIP_SIZE])
@@ -613,15 +497,42 @@ def chip_image_worker(rgbn,dw_path,s2_windows,dw_windows,base_id,lock):
 
 if __name__ == '__main__':
 
+	########## ARGV CONFIG ##########
+	parser = argparse.ArgumentParser(
+		prog="chipping.py",
+		description="Preprocessing (chipping) of Sentinel-2 and DynamicWorld V1 images.")
+
+	# PATHS
+	parser.add_argument('--data-dir',default='./dat',
+		help="Dataset directory")
+	parser.add_argument('--chip-dir',
+		help="Chip directory")
+
+	# WHAT TO DO?
+	parser.add_argument('--clean',action='store_true',default=False,
+		help="Remove unlabeled rasters and unnecessary files",dest='clean')
+	parser.add_argument('--chips',action='store_true',default=False,
+		help='Process .SAFE folders in data directory to create a dataset of raster chips.',dest='chips')
+
+	# LOAD
+	args = parser.parse_args()
+
+	########## SET ARGS ##########
+	DATA_DIR  = args.data_dir
+	LABEL_DIR = DATA_DIR+'/dynamicworld' #<-- fix this at some point...
+	CHIP_DIR  = args.chip_dir
+
 	if not os.path.isdir(DATA_DIR):
 		print("DATA_DIR not found. EXITING.")
 		sys.exit()
 	print(f"DATA_DIR:  {DATA_DIR}")	
+
 	if len(glob.glob('*.SAFE',root_dir=DATA_DIR)) == 0 :
 		print("EMPTY DATA_DIR")
 		sys.exit()
-	print(f"LABEL_DIR: {LABEL_DIR}")
-	print(f"CHIP_DIR:  {CHIP_DIR}")
+
+	print(f"LABEL_DIR set to: {LABEL_DIR}")
+	print(f"CHIP_DIR set to:  {CHIP_DIR}")
 
 	if args.clean:
 		folder_check() 
@@ -644,6 +555,8 @@ if __name__ == '__main__':
 		if os.path.isfile(f"{CHIP_DIR}/stats.txt"):
 			os.remove(CHIP_DIR+'/stats.txt')
 
+
+		########## PROCESS .SAFE FOLDERS ##########
 		N = len(folders)
 		for i,f in enumerate(folders):
 			try:
@@ -656,15 +569,6 @@ if __name__ == '__main__':
 				continue
 
 			# <----- CHIP ----->
-			chip_image(product,i,N) 
+			chip_image(product,i,N)
 
-	if args.plots:
-		pass
-
-	if args.kml:
-		filter_tile_kml()
-
-	if args.borders:
-		#Get px (0,0) coordinates per tile estimate locations of chips.
-		pass
-
+	print("DONE.")

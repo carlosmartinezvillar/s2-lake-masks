@@ -1,3 +1,9 @@
+'''
+THIS script produces a label with a 3rd category corresponding to shoreline, i.e. water pixels and
+land neighboring the other class within a 8-pixel neighborhood.  Also, it produces a 3rd mask/label
+with a distance to shoreline.
+'''
+
 import numpy as np
 import cupy as cp
 import os
@@ -12,9 +18,9 @@ parser.add_argument('--out-dir',required=True)
 ############################################################
 # FUNCTIONS
 ############################################################
-# C KERNEL
-neighbor_check_kernel = cp.RawKernel(r'''
-extern "C" __global__ void neighbor_check(const unsigned char* img, unsigned char* out, int width, int height, unsigned char threshold) {
+# C KERNEL FOR SHORELINE
+shoreline_kernel = cp.RawKernel(r'''
+extern "C" __global__ void check_mismatch(const unsigned char* img, unsigned char* out, int width, int height, unsigned char threshold) {
 	//Device indices
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -47,10 +53,11 @@ extern "C" __global__ void neighbor_check(const unsigned char* img, unsigned cha
     wow_my_first_goto:
     out[idx] = flag ? 1 : 0;
 }
-''', 'neighbor_check')
+''', 'check_mismatch')
 
+distance_kernel = None
 
-def check_neighbors(img):
+def get_shoreline(img):
     """
     Applies a CuPy kernel to check if a pixel's neighbors belong to a different class
     
@@ -69,8 +76,13 @@ def check_neighbors(img):
                  (height + block_size[1] - 1) // block_size[1])
     
     # Launch kernel
-    neighbor_check_kernel(grid_size, block_size, (img, out, width, height, threshold))
+    shoreline_kernel(grid_size, block_size, (img, out, width, height, threshold))
     return out
+
+
+def calculate_distances(img):
+    pass
+
 
 ############################################################
 # MAIN
@@ -90,8 +102,8 @@ if __name__ == '__main__':
 	# NUMPY TO CUPY
 	lbl_gpu = cp.asarray(lbl)
 
-	# CALL FUNC
-	shore_mask_gpu = check_neighbors(img)
+	# ESTIMATE SHORELINE
+	shore_mask_gpu = get_shoreline(img)
 	shore_mask_cpu = cp.asnumpy(shore_mask)
 
 	# CHECK OUTPUT

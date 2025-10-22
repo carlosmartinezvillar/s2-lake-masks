@@ -1,4 +1,5 @@
 #!/bin/bash
+#ALTERNATIVE TO THE SCRIPT IN 'pipeline.sh'. HERE ALL CHUNKS ARE STORED IN TEMP NUMBERED TXTs.
 
 # DATA_DIR=/cache #nrp
 # DATA_DIR=../cache #local
@@ -72,7 +73,7 @@ fi
 #--------------------- RUN:COPY AND CHIP -----------------------------
 # Essentially we're running all repeatedly:
 # rclone copy --include-from ./chunks/chunk_0.txt nrp:s2-lakes-clean . -P --transfers 32
-# python3 ../s2-lake-masks/preprocs.py --data-dir . --chip-dir ./chips --chips
+# python3 ../s2-lake-masks/chipping.py --data-dir . --chip-dir ./chips --chips
 # rm -r ./*.SAFE
 # rclone copy ./chips/ nrp:lake-chips -P --transfers 32
 # rm -r ./chips/*.tif
@@ -88,7 +89,7 @@ if [ $DOWNLOAD_ALL == 1 ]; then
 		rclone copy --include-from ${DATA_DIR}/chunk_${i}.txt nrp:s2-lakes-clean ${DATA_DIR} -P --transfers ${N_TRANSFERS}
 
 		#MAKE CHIPS
-		python3 preprocs.py --data-dir ${DATA_DIR} --chip-dir ${DATA_DIR}/chips --chips
+		python3 chipping.py --data-dir ${DATA_DIR} --chip-dir ${DATA_DIR}/chips --chips
 
 		#CLEAN UP -- REMOVE .SAFE
 		rm -r ${DATA_DIR}/*.SAFE
@@ -102,7 +103,7 @@ if [ $DOWNLOAD_ALL == 1 ]; then
 	rclone copy --include-from ${DATA_DIR}/chunk_${n_chunks}.txt ${ORIG_BUCKET} ${DATA_DIR} -P	--transfers ${N_TRANSFERS}
 
 	#MAKE CHIPS
-	python3 preprocs.py --data-dir ${DATA_DIR} --chip-dir ${DATA_DIR}/chips --chips
+	python3 chipping.py --data-dir ${DATA_DIR} --chip-dir ${DATA_DIR}/chips --chips
 
 	#CLEAN UP -- REMOVE .SAFE
 	rm -r ${DATA_DIR}/*.SAFE
@@ -122,7 +123,7 @@ else
 
 
 		rclone copy --include-from ${DATA_DIR}/chunk_${CHUNK_NR}.txt ${ORIG_BUCKET} ${DATA_DIR} -P --transfers ${N_TRANSFERS}
-		python3 preprocs.py --data-dir ${DATA_DIR} --chip-dir ${DATA_DIR}/chips --chips
+		python3 chipping.py --data-dir ${DATA_DIR} --chip-dir ${DATA_DIR}/chips --chips
 		# rm -r ${DATA_DIR}/*.SAFE
 
 	fi
