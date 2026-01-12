@@ -57,7 +57,7 @@ class IncompleteDirError(Exception):
 
 class Product():
 	'''
-	An object defining a single Sentinel-2 product in the ESA database.
+	An object referencing a single Sentinel-2 product in the ESA database.
 
 	Parameters
 	----------
@@ -155,6 +155,7 @@ def get_gee_id(s2_id: str) -> str:
 ####################################################################################################
 def check_remote():
 	pass
+
 
 def folder_check():
 	'''
@@ -508,12 +509,6 @@ if __name__ == '__main__':
 	parser.add_argument('--chip-dir',
 		help="Chip directory")
 
-	# WHAT TO DO?
-	parser.add_argument('--clean',action='store_true',default=False,
-		help="Remove unlabeled rasters and unnecessary files",dest='clean')
-	parser.add_argument('--chips',action='store_true',default=False,
-		help='Process .SAFE folders in data directory to create a dataset of raster chips.',dest='chips')
-
 	# LOAD
 	args = parser.parse_args()
 
@@ -534,41 +529,38 @@ if __name__ == '__main__':
 	print(f"LABEL_DIR set to: {LABEL_DIR}")
 	print(f"CHIP_DIR set to:  {CHIP_DIR}")
 
-	if args.clean:
-		folder_check() 
 
-	if args.chips:
-		#.SAFE folders in data directory
-		folders = glob.glob('*.SAFE',root_dir=DATA_DIR)
-		paths   = glob.glob(DATA_DIR+'/*.SAFE')
+	#.SAFE folders in data directory
+	folders = glob.glob('*.SAFE',root_dir=DATA_DIR)
+	paths   = glob.glob(DATA_DIR+'/*.SAFE')
 
-		# Check everything is there
-		if not os.path.isdir(LABEL_DIR):
-			print("LABEL_DIR not found. EXITING.")
-			sys.exit()
+	# Check everything is there
+	if not os.path.isdir(LABEL_DIR):
+		print("LABEL_DIR not found. EXITING.")
+		sys.exit()
 
-		#make chip dir if not already there
-		if not os.path.isdir(CHIP_DIR):
-			os.mkdir(CHIP_DIR) 
+	#make chip dir if not already there
+	if not os.path.isdir(CHIP_DIR):
+		os.mkdir(CHIP_DIR) 
 
-		# clean log file
-		if os.path.isfile(f"{CHIP_DIR}/stats.txt"):
-			os.remove(CHIP_DIR+'/stats.txt')
+	# clean log file
+	if os.path.isfile(f"{CHIP_DIR}/stats.txt"):
+		os.remove(CHIP_DIR+'/stats.txt')
 
 
-		########## PROCESS .SAFE FOLDERS ##########
-		N = len(folders)
-		for i,f in enumerate(folders):
-			try:
-				product = Product(f) #load metadata
-			except (EmptyLabelError,IncompleteDirError) as e:
-				print(f'ERROR: {e}')
-				print(f'---> SKIPPING {f}')
-				with open(f'{CHIP_DIR}/errored.txt','a') as fp:
-					fp.write(f'{f}\n')
-				continue
+	########## PROCESS .SAFE FOLDERS ##########
+	N = len(folders)
+	for i,f in enumerate(folders):
+		try:
+			product = Product(f) #load metadata
+		except (EmptyLabelError,IncompleteDirError) as e:
+			print(f'ERROR: {e}')
+			print(f'---> SKIPPING {f}')
+			with open(f'{CHIP_DIR}/errored.txt','a') as fp:
+				fp.write(f'{f}\n')
+			continue
 
-			# <----- CHIP ----->
-			chip_image(product,i,N)
+		# <----- CHIP ----->
+		chip_image(product,i,N)
 
 	print("DONE.")

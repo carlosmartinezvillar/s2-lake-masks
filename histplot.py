@@ -12,12 +12,15 @@ import time
 import argparse
 import numpy as np
 
-import preprocs
+import chipping
 
 plt.style.use('fast')
 plt.rcParams['font.family'] = 'Courier'
 plt.rcParams['font.size'] = 10
 
+####################################################################################################
+# WHOLE RASTER PLOTS
+####################################################################################################
 def plot_raster_lbl_binary(out_path,P,chip_size=512):
 	'''
 	Plot workable area overlapping windows. Black and white classes.
@@ -25,7 +28,7 @@ def plot_raster_lbl_binary(out_path,P,chip_size=512):
 	Parameters
 	----------
 	out_path:
-	P: preprocs.Product() class.
+	P: chipping.Product() class.
 	chip_size:
 
 	'''
@@ -38,7 +41,7 @@ def plot_raster_lbl_binary(out_path,P,chip_size=512):
 	kwargs.update({'height':windows_height,'width':windows_width,'count':3,'compress':'lzw'})
 	out_ptr = rio.open(out_path,'w',**kwargs)
 
-	dw_windows = preprocs.get_windows_strided(P.dw_borders,chip_size,stride=chip_size)
+	dw_windows = chipping.get_windows_strided(P.dw_borders,chip_size,stride=chip_size)
 
 	for _,w in dw_windows:
 		#read
@@ -75,7 +78,7 @@ def plot_raster_lbl_binary_windows(out_path,P,chip_size=512,stride=512):
 	Parameters
 	----------
 	out_path:
-	P: preprocs.Product() class.
+	P: chipping.Product() class.
 	chip_size:
 
 	'''
@@ -105,7 +108,7 @@ def plot_raster_lbl_binary_windows(out_path,P,chip_size=512,stride=512):
 	kwargs.update({'height':H,'width':W,'count':3,'compress':'lzw'})
 	out_ptr = rio.open(out_path,'w',**kwargs)
 
-	dw_windows = preprocs.get_windows_strided(P.dw_borders,chip_size,stride=chip_size)
+	dw_windows = chipping.get_windows_strided(P.dw_borders,chip_size,stride=chip_size)
 
 	for _,w in dw_windows:
 		#read
@@ -131,11 +134,20 @@ def plot_raster_lbl_binary_windows(out_path,P,chip_size=512,stride=512):
 def plot_raster_rgb_windows():
 	pass
 
+
 def plot_raster_rgb_bounded():
 	pass
 
-
+####################################################################################################
+# POLYGONS
+####################################################################################################
 def filter_tile_kml(drop=False):
+	'''
+	Filter the KML containing the complete list of MGRS tiles used by Sentinel-2.
+	The processed result keeps only the tiles present in the data directory (using DynamicWorld
+	labels).
+	'''
+
 
 	# CHECK FILE OR .ZIP OF EXISTS 
 	kml_path = 'S2A_OPER_GIP_TILPAR_MPC__20151209T095117_V20150622T000000_21000101T000000_B00.kml'
@@ -224,6 +236,46 @@ def filter_tile_kml(drop=False):
 	print("KML file written to filtered.kml")
 
 
+def plot_map_tile_polygons():
+	'''
+	Plot a polygons of the United States along with the polygons of the 
+	tiles in the dataset.
+	'''
+	US_SHP_PATH = "path/to/cb_2018_us_state_500k/cb_2018_us_state_500k.shp"
+	S2_KML_PATH = "path/to/your_other_poly.shp"
+	OUT_PATH = "./tiles.png"
+
+	# 1.1 LOAD US STATES
+	# wget.download("https://www2.census.gov/geo/tiger/GENZ2018/shp/cb_2018_us_state_500k.zip")
+	# territories = ['PR', 'AS', 'VI', 'MP', 'GU', 'AK', 'HI']
+	# contiguous_us = states[~states['STUSPS'].isin(territories)]
+	us_poly = gpd.read_file(US_POLY_PATH)
+
+	# 1.2 LOAD SENTINEL TILES USED
+	# Enable KML driver in fiona
+	gpd.io.file.fiona.drvsupport.supported_drivers['KML'] = 'rw'
+	s2_poly = gpd.read_file(S2_KML_PATH, driver='KML')
+	# s2_poly = gpd.read_file(S2_POLY_PATH)
+
+
+	# 2. PROJECT TO COMMON CRS
+	us_poly_projected = us_poly.to_crs(epsg=3857)
+	s2_poly_projected = s2_poly.to_crs(epsg=3857)
+
+
+	# 3. PLOT LAYERS
+	fig, ax = plt.subplots(1,1,figsize=fig_size_wide)
+
+	us_poly_projected.plot(ax=ax,color='lightgray',edgecolor='black',alpha=1.0)
+	s2_poly_projected.plot(ax=ax,color='red',alpha=1.0)
+	ax.set_title("Location of Sentinel-2 (MGRS) Tiles")
+	ax.set_axis_off()
+
+	plt.savefig(OUT_PATH)
+
+####################################################################################################
+# TILE HISTOGRAMS
+####################################################################################################
 def tile_date_distribution():
 	chip_files_tr = glob("*_B0X.tif",root_dir=f"{chip_dir}/training")
 	chip_files_va = glob("*_B0X.tif",root_dir=f"{chip_dir}/validation")
@@ -237,7 +289,31 @@ def tile_date_distribution():
 def tile_month_distribution():
 	pass
 
+####################################################################################################
+# OTHER STATISTICS
+####################################################################################################
+def calculate_band_means():
+	'''
+	Get and store the bands' mean and standard deviation of the pixel values for the entire dataset
+	of chips (a la imagenet).
+	'''
+	pass
 
+def calculate_band_medians():
+	'''
+	Same as above for medians.
+	'''
+	pass
+
+def calculate_class_mean_rgb()
+	pass
+	
+def count_classes():
+	pass
+
+####################################################################################################
+# MAIN
+####################################################################################################
 def parse_args():
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--data-dir',default='./dat',
@@ -251,6 +327,7 @@ def parse_args():
 	args = parser.parse_args()
 	#check something here..
 	return args
+
 
 if __name__ == '__main__':
 	args = parse_args()

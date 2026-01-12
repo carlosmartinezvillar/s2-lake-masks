@@ -55,17 +55,54 @@ extern "C" __global__ void check_mismatch(const unsigned char* img, unsigned cha
 }
 ''', 'check_mismatch')
 
-distance_kernel = None
+#C KERNEL FOR 
+distance_kernel = cp.RawKernel(r'''
+extern "C" __global__ void find_nearest(const unsigned char* img, unsigned char* out, int width, int height){
+
+    //Device indices
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    // Out of bounds
+    if (x >= width || y >= height) return;
+
+    // Index of this pixel in flattened img array
+    int idx = y * width + x;
+    unsigned char pixel = img[idx];
+
+    //If shoreline set distance to zero 
+    if (pixel==1){
+        out[idx] = 0;
+    //Else look for closest shore px
+    }else{
+        //Iterate through each of the pixel in shoreline set
+        int N = width * height;
+        int closest_idx = 0;
+        for(int i=0;i<=N;++i){ 
+            if (img[i] == 1){
+
+            //check it is not the same pixel
+
+            }else{
+                continue;
+            }
+        }
+
+    }
+
+
+}
+''','find_nearest')
 
 def get_shoreline(img):
     """
     Applies a CuPy kernel to check if a pixel's neighbors belong to a different class
     
     Args:
-        # img (cupy.ndarray): Input 2D image as a CuPy array of type uint8.
-    
+        img (cupy.ndarray): Input 2D image as a CuPy array of type uint8.
+
     Returns:
-        cupy.ndarray: Binary mask where 1 indicates a neighboring pixel meets condition
+        out (cupy.ndarray): Binary mask where 1 indicates a neighboring pixel meets condition
     """
     height, width = img.shape
     out = cp.zeros_like(img, dtype=cp.uint8)
@@ -80,7 +117,27 @@ def get_shoreline(img):
     return out
 
 
-def calculate_distances(img):
+def get_distances(img):
+    """
+    Applies a CuPy kernel to find a pixel's distance to the nearest pixel set to 1 (shoreline).
+    
+    Args:
+        img (cupy.ndarray): Input 2D image as a CuPy array of type uint8.
+    
+    Returns:
+        out (cupy.ndarray): Binary mask where 1 indicates a neighboring pixel meets condition
+    """    
+    height, width = img.shape
+    # out = cp.zeros_like(img, dtype=cp.uint8)
+    out = cp.zeros_like(img, dtype=cp.float32)
+
+    # Define thread/block configuration
+    block_size = (16, 16)
+    grid_size = ((width + block_size[0] - 1) // block_size[0],
+                 (height + block_size[1] - 1) // block_size[1])
+
+    g
+    
     pass
 
 
