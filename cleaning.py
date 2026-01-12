@@ -89,3 +89,31 @@ def folder_check():
 
 if __name__ == '__main__':
 
+	# ARGV
+	parser = argparse.ArgumentParser(
+		prog="s2-lakes-preprocessing/cleaning.py",
+		description="Clean the data directory of Sentinel-2 and DynamicWorld V1 images to remove \
+		incomplete products, products without a matching label, and labels without matching \
+		products. Also deletes two overlapping tiles (T11SKD and T11TKE).")
+	parser.add_argument('--data-dir',default=None,help="Dataset directory")
+	args = parser.parse_args()
+	DATA_DIR = args.data_dir
+
+	# No argument passed
+	if DATA_DIR is None:
+		print("No data directory argument given.")
+		sys.exit(1)
+
+	# Incorrect path
+	if not os.path.isdir(DATA_DIR):
+		print("Data directory not found. Exiting.")
+		sys.exit(1)
+	print(f"Data directory set to:  {DATA_DIR}")
+
+	# Empty directory
+	if len(glob.glob('*.SAFE',root_dir=DATA_DIR)) == 0:
+		print("EMPTY DATA_DIR")
+		sys.exit(1)
+
+	# Run
+	folder_check()
