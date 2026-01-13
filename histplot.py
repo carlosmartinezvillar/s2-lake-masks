@@ -6,11 +6,13 @@ import os
 import zipfile
 import rasterio as rio
 from rasterio.windows import Window
-import mapltolib.pyplot as plt
+import matplotlib.pyplot as plt
 import glob
 import time
 import argparse
 import numpy as np
+import xml.etree.ElementTree as ET
+from lxml import etree as LT
 
 import chipping
 
@@ -148,9 +150,10 @@ def filter_tile_kml(drop=False):
 	labels).
 	'''
 
+	out_file_name = 'filtered_tiles'
 
 	# CHECK FILE OR .ZIP OF EXISTS 
-	kml_path = 'S2A_OPER_GIP_TILPAR_MPC__20151209T095117_V20150622T000000_21000101T000000_B00.kml'
+	kml_path = './kml/S2A_OPER_GIP_TILPAR_MPC__20151209T095117_V20150622T000000_21000101T000000_B00.kml'
 
 	if not os.path.isfile(kml_path):
 		#unzip
@@ -168,15 +171,16 @@ def filter_tile_kml(drop=False):
 				return
 
 	#LOAD LIST OF TILES IN DATASET
-	# products = glob.glob('*.SAFE',root_dir=DATA_DIR)
+	# products = glob.glob('*.SAFE',root_dir=DATA_DIR) #Using .SAFE folders
 	# tiles = [p.split('-'[5][1:] for p in products)]
-	products = glob.glob('*.tif',root_dir=f'{DATA_DIR}/dynamicworld')
-	if drop:
-		products = [p.split('_')[2][1:6] for p in products if p!='11TKE' and p!='11SKD']
-	else:
-		products = [p.split('_')[2][1:6] for p in products]
+
+	products = glob.glob('*.tif',root_dir=f'{DATA_DIR}/dynamicworld') #Using dynamicworld
+	products = [p.split('_')[2][1:6] for p in products]
 	tiles_unique,counts = np.unique(products,return_counts=True)
-	tiles = list(tiles_unique)
+	if drop:
+		tiles = list(tiles_unique) 		
+	else:
+		tiles = list(tiles_unique) + ['11TKE','11SKD']		
 
 	print("RASTERS PER TILE")
 	print("-"*80)
@@ -184,56 +188,56 @@ def filter_tile_kml(drop=False):
 		print(f"{t} | {c} | " + "*"*(c//2))
 
 	kml_ns = {
-		'':"http://www.opengis.net/kml/2.2",
-		'gx':"http://www.opengis.net/kml/2.2",
+		None:"http://www.opengis.net/kml/2.2",
+		'gx':"http://www.opengis.net/kml/ext/2.2",
 		'kml':"http://www.opengis.net/kml/2.2",
 		'atom':"http://www.w3.org/2005/Atom"
 	}
 
 	#PARSE ORIGINAL SENTINEL-2 KML
-	source_root = ET.parse(kml_path).getroot() #<kml>, source_root[0] <Document>
+	source_root = LT.parse(kml_path).getroot() #<kml>, source_root[0] is <Document>
 
 	#NAMESPACES GOT SILLY JUST REMOVE THEM
 	for e in source_root.iter():
 		ns,_ = e.tag.split('}')
 		e.tag = _
 
-	source_folder      = source_root[0][5] #<Folder>
-	document_keep      = [e for e in source_root[0][0:5]] + [source_root[0][6]]
+	source_folder = source_root[0][5] # this is <Folder>
+	# source_root[0][6] second folder with info at the end.
+	document_keep = [e for e in source_root[0][0:5]] + [source_root[0][6]] #first 4 elems and folder at the end
 
 	# START APPENDING STUFF TO NEW KML
-	# <FOLDER>
+	# Append stuff to <FOLDER>
 	# target_folder = ET.Element("{%s}Folder" % kml_ns[''])
-	target_folder = ET.Element("Folder")
-	target_folder.insert(0,source_folder[0])
-	target_folder.insert(1,source_folder[1])
+	target_folder = LT.Element("Folder")
+	target_folder.text = '\n\t\t'
+	target_folder.append(source_folder[0]) #<name>
+	target_folder.append(source_folder[0]) #<Snippet maxLines="2">Legend: Single Symbol</Snippet>
 
-	# for placemark in source_folder.findall('Placemark',kml_ns):
-	for placemark in source_folder.findall('Placemark'):
-		if placemark[0].text in tiles: #CHECK ID -- placemark[0] is name
-			target_folder.append(placemark)
+	# Append <placemark>'s' to new <Folder>
+	for placemark in source_folder:
+		if placemark[0].text in tiles:
+			target_folder.append(placemark) # Append <Placemark> to new <Folder>
+			target_folder[-1][2].text = LT.CDATA(placemark[2].text) # <Add ![CDATA[]] tah in <description>
 
-	# <DOCUMENT>
+	# Append new <Folder> to new <DOCUMENT>
 	# target_document = ET.Element("{%s}Document" % kml_ns[''])
-	target_document = ET.Element("Document")
-	for e in document_keep[0:5]:
+	target_document = LT.Element("Document")
+	for e in document_keep[0:5]: #first 4 elements before <folder>
 		target_document.append(e)
-	target_document.text = '\n'
+	target_document.text = '\n\t'
 	target_document[0].text = 'filtered'
-	target_document.append(target_folder)
+	target_document.append(target_folder) #append <folder> with placemarks
 
-	# <XML>
+	# Append document to <XML>
 	# target_root = ET.Element("{%s}kml" % kml_ns[''])
-	target_root = ET.Element("kml")
-	target_root.text = '\n'
+	target_root = LT.Element("kml",nsmap=kml_ns)
+	# target_root.text = '\n\t'
 	target_root.append(target_document)
-	target_root.set('xmlns',kml_ns['']) #not sure why namespace can't be copied as attrib
-	target_root.set(f'xmlns:gx',kml_ns['gx'])
-	target_root.set(f'xmlns:kml',kml_ns['kml'])
-	target_root.set(f'xmlns:atom',kml_ns['atom'])
-	target_tree = ET.ElementTree(target_root)	
-	target_tree.write('filtered.kml',encoding='UTF-8',xml_declaration=True,default_namespace=None,method='xml')
-	print("KML file written to filtered.kml")
+	target_tree = LT.ElementTree(target_root)	
+	# target_tree.write(f"./kml/{out_file_name}.kml",encoding='UTF-8',xml_declaration=True,default_namespace=None,method='xml')
+	target_tree.write(f"./kml/{out_file_name}.kml",encoding='UTF-8',xml_declaration=True,pretty_print=True)
+	print(f"KML file written to {out_file_name}.kml")
 
 
 def plot_map_tile_polygons():
@@ -305,7 +309,7 @@ def calculate_band_medians():
 	'''
 	pass
 
-def calculate_class_mean_rgb()
+def calculate_class_mean_rgb():
 	pass
 	
 def count_classes():
@@ -330,10 +334,21 @@ def parse_args():
 
 
 if __name__ == '__main__':
+
 	args = parse_args()
 
+	if args.data_dir is None:
+		print("No data directory given.")
+		sys.exit(1)
+
+	DATA_DIR = args.data_dir
+
+	if not os.path.isdir(DATA_DIR):
+		print("Data directory path not found.")
+		sys.exit(1)
+
 	if args.kml:
-		filter_tile_kml()
+		filter_tile_kml(drop=True)
 
 	if args.plots:
 		plot_raster_lbl_binary('./fig/raster_lbl_binary.png',sample_product)

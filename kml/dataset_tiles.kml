@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='UTF-8'?>
-<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.opengis.net/kml/2.2" xmlns:kml="http://www.opengis.net/kml/2.2" xmlns:atom="http://www.w3.org/2005/Atom">
+<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.opengis.net/kml/ext/2.2" xmlns:kml="http://www.opengis.net/kml/2.2" xmlns:atom="http://www.w3.org/2005/Atom">
 <Document>
-<name>filtered</name>
+	<name>filtered</name>
 	<open>1</open>
 	<Style id="zn">
 		<IconStyle>
@@ -56,7 +56,8 @@
 			<fill>0</fill>
 		</PolyStyle>
 	</Style>
-	<Folder><name>Features</name>
+	<Folder>
+		<name>Features</name>
 		<Snippet maxLines="2">Legend: Single Symbol</Snippet>
 		<Placemark>
 			<name>10SEH</name>
@@ -518,4 +519,6 @@
 				</Point>
 			</MultiGeometry>
 		</Placemark>
-		</Folder></Document></kml>
+		</Folder>
+	</Document>
+</kml>
