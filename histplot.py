@@ -245,8 +245,8 @@ def plot_map_tile_polygons():
 	Plot a polygons of the United States along with the polygons of the 
 	tiles in the dataset.
 	'''
-	US_SHP_PATH = "path/to/cb_2018_us_state_500k/cb_2018_us_state_500k.shp"
-	S2_KML_PATH = "path/to/your_other_poly.shp"
+	US_SHP_PATH = "./kml/cb_2024_us_state_500k/cb_2024_us_state_500k.shp"
+	S2_KML_PATH = "./kml/filtered_overlapping.kml"
 	OUT_PATH = "./tiles.png"
 
 	# 1.1 LOAD US STATES
