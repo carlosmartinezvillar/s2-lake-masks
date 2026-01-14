@@ -143,14 +143,14 @@ def plot_raster_rgb_bounded():
 ####################################################################################################
 # POLYGONS
 ####################################################################################################
-def filter_tile_kml(drop=False):
+def filter_tile_kml(dropped=False):
 	'''
 	Filter the KML containing the complete list of MGRS tiles used by Sentinel-2.
 	The processed result keeps only the tiles present in the data directory (using DynamicWorld
 	labels).
 	'''
 
-	out_file_name = 'filtered_tiles'
+	
 
 	# CHECK FILE OR .ZIP OF EXISTS 
 	kml_path = './kml/S2A_OPER_GIP_TILPAR_MPC__20151209T095117_V20150622T000000_21000101T000000_B00.kml'
@@ -177,10 +177,12 @@ def filter_tile_kml(drop=False):
 	products = glob.glob('*.tif',root_dir=f'{DATA_DIR}/dynamicworld') #Using dynamicworld
 	products = [p.split('_')[2][1:6] for p in products]
 	tiles_unique,counts = np.unique(products,return_counts=True)
-	if drop:
-		tiles = list(tiles_unique) 		
+	if dropped:
+		tiles = ['11TKE','11SKD']
+		out_file_name = 'filtered_tiles_overlapping'
 	else:
-		tiles = list(tiles_unique) + ['11TKE','11SKD']		
+		tiles = list(tiles_unique)
+		out_file_name = 'filtered_tiles_nonoverlapping'		
 
 	print("RASTERS PER TILE")
 	print("-"*80)
@@ -251,9 +253,9 @@ def plot_map_tile_polygons():
 
 	# 1.1 LOAD US STATES
 	# wget.download("https://www2.census.gov/geo/tiger/GENZ2018/shp/cb_2018_us_state_500k.zip")
-	# territories = ['PR', 'AS', 'VI', 'MP', 'GU', 'AK', 'HI']
+	territories = ['PR', 'AS', 'VI', 'MP', 'GU', 'AK', 'HI']
 	# contiguous_us = states[~states['STUSPS'].isin(territories)]
-	us_poly = gpd.read_file(US_POLY_PATH)
+	us_poly = gpd.read_file(US_SHP_PATH)
 
 	# 1.2 LOAD SENTINEL TILES USED
 	# Enable KML driver in fiona
@@ -348,7 +350,7 @@ if __name__ == '__main__':
 		sys.exit(1)
 
 	if args.kml:
-		filter_tile_kml(drop=True)
+		filter_tile_kml(dropped=True)
 
 	if args.plots:
 		plot_raster_lbl_binary('./fig/raster_lbl_binary.png',sample_product)
