@@ -247,9 +247,10 @@ def plot_map_tile_polygons():
 	Plot a polygons of the United States along with the polygons of the 
 	tiles in the dataset.
 	'''
-	US_SHP_PATH = "./kml/cb_2024_us_state_500k/cb_2024_us_state_500k.shp"
-	S2_KML_PATH = "./kml/filtered_overlapping.kml"
-	OUT_PATH = "./tiles.png"
+	US_SHP_PATH   = "./kml/cb_2024_us_state_500k/cb_2024_us_state_500k.shp"
+	S2_KML_PATH_1 = "./kml/filtered_overlapping.kml"
+	S2_KML_PATH_2 = "./kml/filtered_nonoverlapping.kml"
+	OUT_PATH      = "./tiles.png"
 
 	# 1.1 LOAD US STATES
 	# wget.download("https://www2.census.gov/geo/tiger/GENZ2018/shp/cb_2018_us_state_500k.zip")
