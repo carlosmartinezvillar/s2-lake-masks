@@ -253,20 +253,19 @@ def plot_map_tile_polygons():
 	OUT_PATH      = "./tiles.png"
 
 	# 1.1 LOAD US STATES
-	# wget.download("https://www2.census.gov/geo/tiger/GENZ2018/shp/cb_2018_us_state_500k.zip")
-	territories = ['PR', 'AS', 'VI', 'MP', 'GU', 'AK', 'HI']
-	# contiguous_us = states[~states['STUSPS'].isin(territories)]
-	us_poly = gpd.read_file(US_SHP_PATH)
+	states            = gpd.read_file(US_SHP_PATH)
+	territories       = ['PR', 'AS', 'VI', 'MP', 'GU', 'AK', 'HI']
+	contiguous_states = states[~states['STUSPS'].isin(territories)]
+
 
 	# 1.2 LOAD SENTINEL TILES USED
 	# Enable KML driver in fiona
 	gpd.io.file.fiona.drvsupport.supported_drivers['KML'] = 'rw'
-	s2_poly = gpd.read_file(S2_KML_PATH, driver='KML')
-	# s2_poly = gpd.read_file(S2_POLY_PATH)
-
+	tiles_bad  = gpd.read_file(S2_KML_PATH_1, driver='KML')
+	tiles_good = gpd.read_file(S2_KML_PATH_2, driver='KML')
 
 	# 2. PROJECT TO COMMON CRS
-	us_poly_projected = us_poly.to_crs(epsg=3857)
+	us_poly_projected = us_poly.to_crs(epsg=3857) #<---- break
 	s2_poly_projected = s2_poly.to_crs(epsg=3857)
 
 

@@ -1,3 +1,8 @@
+'''
+This scripts removes unmatched .jp2 and .tif files. Incomplete .SAFE product folders are removed 
+along with label folders without matching sentinel-2 products and sentinel-2 products without a 
+matching label (dynamicworld) product.   
+'''
 import os
 import xml.etree.ElementTree as ET
 import glob
