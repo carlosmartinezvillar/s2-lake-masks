@@ -16,6 +16,8 @@ from lxml import etree as LT
 import geopandas as gpd
 from fiona.drvsupport import supported_drivers
 import sys
+import pyproj
+pyproj.network.set_network_enabled(False) #weird use where to_crs()
 
 import chipping
 
@@ -250,7 +252,7 @@ def plot_map_tile_polygons():
 	S2_KML_PATH_2 = "./kml/filtered_tiles_overlapping.kml"
 	WATERB_PATH   = "./kml/sites/sites.shp"
 	OUT_PATH      = "./fig/tiles.png"
-	common_crs = 'EPSG:5070'
+	common_crs = "EPSG:5070"
 
 	# 1. LOAD FILES
 	#---------------
@@ -262,11 +264,9 @@ def plot_map_tile_polygons():
 	# 1.2 LOAD SENTINEL TILES USED
 	supported_drivers['LIBKML'] = 'rw' 	# Enable KML driver in fiona
 	tiles_gut = gpd.read_file(S2_KML_PATH_1, driver='KML') # read
-	tiles_bad = gpd.read_file(S2_KML_PATH_2, driver='KML') # read
 	tiles_gut['geometry'] = tiles_gut.geometry.apply(lambda x: x.geoms[0]) #POLYGON in GEOMETRYCOLLECTION
-	# tiles_gut.set_geometry('poly')
+	tiles_bad = gpd.read_file(S2_KML_PATH_2, driver='KML') # read
 	tiles_bad['geometry'] = tiles_bad.geometry.apply(lambda x: x.geoms[0]) #POLYGON in GEOMETRYCOLLECTION
-	# tiles_bad.set_geometry('poly')
 
 	# 1.3 LOAD WATERBODY POLYGONS
 	water = gpd.read_file(WATERB_PATH)
@@ -275,29 +275,40 @@ def plot_map_tile_polygons():
 	#-------------------------
 	contiguous = contiguous.to_crs(common_crs) #<---- break
 	tiles_gut  = tiles_gut.to_crs(common_crs)
-	tiles_bad  = tiles_gut.to_crs(common_crs)
+	tiles_bad  = tiles_bad.to_crs(common_crs)
 	water      = water.to_crs(common_crs)
 
 	# 3. PLOT LAYERS
 	# --------------
-	fig, ax = plt.subplots(1,1,figsize=(12,10))
+	fig, ax = plt.subplots(1,1,figsize=(24,20))
+
+	# contiguous.plot(ax=ax,color='white',alpha=1.0,edgecolor='black',linewidth=0.2)
+	# water.plot(ax=ax,color='#88D4E9',alpha=1.0,edgecolor='blue',linewidth=0.05)
+	# tiles_gut.plot(ax=ax,facecolor='none',alpha=1.0,edgecolor='red',linewidth=1.0)
+	# tiles_bad.plot(ax=ax,color='none',alpha=1.0,edgecolor='blue',linewidth=1.0)
 
 	contiguous.plot(ax=ax,color='white',alpha=1.0,edgecolor='black',linewidth=0.2)
-	tiles_gut.plot(ax=ax,color='red',alpha=0.1,edgecolor='red',linewidth=0.2)
-	tiles_bad.plot(ax=ax,color='blue',alpha=0.1,edgecolor='blue',linewidth=0.2)
 	water.plot(ax=ax,color='#88D4E9',alpha=1.0,edgecolor='blue',linewidth=0.1)
+	tiles_gut.plot(ax=ax,color='red',alpha=0.3,edgecolor='red',linewidth=1.0)
+	tiles_bad.plot(ax=ax,color='blue',alpha=0.3,edgecolor='blue',linewidth=1.5)
 
 	# zoom in
 	xmin, ymin, xmax, ymax = contiguous.total_bounds
-	xmax = xmax*
-	xmin = xmin+xmin*0.2
-	ymax = ymax*0.80
+	print(f"X:{xmin}--{xmax} | Y: {ymin}--{ymax}")
+
+	x_range = xmax - xmin
+	y_range = ymax - ymin
+	xmax = x_range*0.35 + xmin #~1/3 of US in plot
+	xmin = xmin - x_range*0.02
+	ymax = ymin + y_range*0.85
+	ymin = ymin + y_range*0.30
 
 	ax.set_xlim(xmin,xmax)
 	ax.set_ylim(ymin,ymax)
 
-	ax.set_title("Sentinel-2 (MGRS) Tiles")
-	# ax.set_axis_off()
+	ax.set_title("Sentinel-2 (MGRS) Tiles",fontsize=24)
+	ax.set_axis_off()
+	plt.tight_layout()
 	plt.savefig(OUT_PATH)
 
 ####################################################################################################
