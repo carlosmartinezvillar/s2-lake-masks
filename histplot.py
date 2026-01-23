@@ -13,6 +13,9 @@ import argparse
 import numpy as np
 import xml.etree.ElementTree as ET
 from lxml import etree as LT
+import geopandas as gpd
+from fiona.drvsupport import supported_drivers
+import sys
 
 import chipping
 
@@ -150,8 +153,6 @@ def filter_tile_kml(dropped=False):
 	labels).
 	'''
 
-	
-
 	# CHECK FILE OR .ZIP OF EXISTS 
 	kml_path = './kml/S2A_OPER_GIP_TILPAR_MPC__20151209T095117_V20150622T000000_21000101T000000_B00.kml'
 
@@ -210,7 +211,6 @@ def filter_tile_kml(dropped=False):
 
 	# START APPENDING STUFF TO NEW KML
 	# Append stuff to <FOLDER>
-	# target_folder = ET.Element("{%s}Folder" % kml_ns[''])
 	target_folder = LT.Element("Folder")
 	target_folder.text = '\n\t\t'
 	target_folder.append(source_folder[0]) #<name>
@@ -223,7 +223,6 @@ def filter_tile_kml(dropped=False):
 			target_folder[-1][2].text = LT.CDATA(placemark[2].text) # <Add ![CDATA[]] tah in <description>
 
 	# Append new <Folder> to new <DOCUMENT>
-	# target_document = ET.Element("{%s}Document" % kml_ns[''])
 	target_document = LT.Element("Document")
 	for e in document_keep[0:5]: #first 4 elements before <folder>
 		target_document.append(e)
@@ -232,12 +231,9 @@ def filter_tile_kml(dropped=False):
 	target_document.append(target_folder) #append <folder> with placemarks
 
 	# Append document to <XML>
-	# target_root = ET.Element("{%s}kml" % kml_ns[''])
 	target_root = LT.Element("kml",nsmap=kml_ns)
-	# target_root.text = '\n\t'
 	target_root.append(target_document)
 	target_tree = LT.ElementTree(target_root)	
-	# target_tree.write(f"./kml/{out_file_name}.kml",encoding='UTF-8',xml_declaration=True,default_namespace=None,method='xml')
 	target_tree.write(f"./kml/{out_file_name}.kml",encoding='UTF-8',xml_declaration=True,pretty_print=True)
 	print(f"KML file written to {out_file_name}.kml")
 
@@ -247,36 +243,61 @@ def plot_map_tile_polygons():
 	Plot a polygons of the United States along with the polygons of the 
 	tiles in the dataset.
 	'''
+
+	# file paths
 	US_SHP_PATH   = "./kml/cb_2024_us_state_500k/cb_2024_us_state_500k.shp"
-	S2_KML_PATH_1 = "./kml/filtered_overlapping.kml"
-	S2_KML_PATH_2 = "./kml/filtered_nonoverlapping.kml"
-	OUT_PATH      = "./tiles.png"
+	S2_KML_PATH_1 = "./kml/filtered_tiles_nonoverlapping.kml"
+	S2_KML_PATH_2 = "./kml/filtered_tiles_overlapping.kml"
+	WATERB_PATH   = "./kml/sites/sites.shp"
+	OUT_PATH      = "./fig/tiles.png"
+	common_crs = 'EPSG:5070'
 
+	# 1. LOAD FILES
+	#---------------
 	# 1.1 LOAD US STATES
-	states            = gpd.read_file(US_SHP_PATH)
-	territories       = ['PR', 'AS', 'VI', 'MP', 'GU', 'AK', 'HI']
-	contiguous_states = states[~states['STUSPS'].isin(territories)]
-
+	states      = gpd.read_file(US_SHP_PATH)
+	territories = ['PR','AS','VI','MP','GU','AK','HI']
+	contiguous  = states[~states['STUSPS'].isin(territories)]
 
 	# 1.2 LOAD SENTINEL TILES USED
-	# Enable KML driver in fiona
-	gpd.io.file.fiona.drvsupport.supported_drivers['KML'] = 'rw'
-	tiles_bad  = gpd.read_file(S2_KML_PATH_1, driver='KML')
-	tiles_good = gpd.read_file(S2_KML_PATH_2, driver='KML')
+	supported_drivers['LIBKML'] = 'rw' 	# Enable KML driver in fiona
+	tiles_gut = gpd.read_file(S2_KML_PATH_1, driver='KML') # read
+	tiles_bad = gpd.read_file(S2_KML_PATH_2, driver='KML') # read
+	tiles_gut['geometry'] = tiles_gut.geometry.apply(lambda x: x.geoms[0]) #POLYGON in GEOMETRYCOLLECTION
+	# tiles_gut.set_geometry('poly')
+	tiles_bad['geometry'] = tiles_bad.geometry.apply(lambda x: x.geoms[0]) #POLYGON in GEOMETRYCOLLECTION
+	# tiles_bad.set_geometry('poly')
+
+	# 1.3 LOAD WATERBODY POLYGONS
+	water = gpd.read_file(WATERB_PATH)
 
 	# 2. PROJECT TO COMMON CRS
-	us_poly_projected = us_poly.to_crs(epsg=3857) #<---- break
-	s2_poly_projected = s2_poly.to_crs(epsg=3857)
-
+	#-------------------------
+	contiguous = contiguous.to_crs(common_crs) #<---- break
+	tiles_gut  = tiles_gut.to_crs(common_crs)
+	tiles_bad  = tiles_gut.to_crs(common_crs)
+	water      = water.to_crs(common_crs)
 
 	# 3. PLOT LAYERS
-	fig, ax = plt.subplots(1,1,figsize=fig_size_wide)
+	# --------------
+	fig, ax = plt.subplots(1,1,figsize=(12,10))
 
-	us_poly_projected.plot(ax=ax,color='lightgray',edgecolor='black',alpha=1.0)
-	s2_poly_projected.plot(ax=ax,color='red',alpha=1.0)
-	ax.set_title("Location of Sentinel-2 (MGRS) Tiles")
-	ax.set_axis_off()
+	contiguous.plot(ax=ax,color='white',alpha=1.0,edgecolor='black',linewidth=0.2)
+	tiles_gut.plot(ax=ax,color='red',alpha=0.1,edgecolor='red',linewidth=0.2)
+	tiles_bad.plot(ax=ax,color='blue',alpha=0.1,edgecolor='blue',linewidth=0.2)
+	water.plot(ax=ax,color='#88D4E9',alpha=1.0,edgecolor='blue',linewidth=0.1)
 
+	# zoom in
+	xmin, ymin, xmax, ymax = contiguous.total_bounds
+	xmax = xmax*
+	xmin = xmin+xmin*0.2
+	ymax = ymax*0.80
+
+	ax.set_xlim(xmin,xmax)
+	ax.set_ylim(ymin,ymax)
+
+	ax.set_title("Sentinel-2 (MGRS) Tiles")
+	# ax.set_axis_off()
 	plt.savefig(OUT_PATH)
 
 ####################################################################################################
@@ -295,6 +316,7 @@ def tile_date_distribution():
 def tile_month_distribution():
 	pass
 
+
 ####################################################################################################
 # OTHER STATISTICS
 ####################################################################################################
@@ -305,17 +327,21 @@ def calculate_band_means():
 	'''
 	pass
 
+
 def calculate_band_medians():
 	'''
 	Same as above for medians.
 	'''
 	pass
 
+
 def calculate_class_mean_rgb():
 	pass
+
 	
 def count_classes():
 	pass
+
 
 ####################################################################################################
 # MAIN
@@ -339,6 +365,11 @@ if __name__ == '__main__':
 
 	args = parse_args()
 
+	if args.plots:
+		# plot_raster_lbl_binary('./fig/raster_lbl_binary.png',sample_product)
+		plot_map_tile_polygons()
+		sys.exit(0)
+
 	if args.data_dir is None:
 		print("No data directory given.")
 		sys.exit(1)
@@ -349,10 +380,7 @@ if __name__ == '__main__':
 		print("Data directory path not found.")
 		sys.exit(1)
 
-	if args.kml:
-		filter_tile_kml(dropped=True)
 
-	if args.plots:
-		plot_raster_lbl_binary('./fig/raster_lbl_binary.png',sample_product)
+
 
 
